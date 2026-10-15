@@ -49,7 +49,8 @@ export interface JiraClientOptions {
 const DEFAULT_TIMEOUT_MS = 10_000;
 const BASE_FIELDS = "summary,issuetype,status,assignee,priority,labels,description,comment";
 const MAX_COMMENTS = 50;
-const MAX_HTML_CHARS = 200_000;
+const MAX_DESCRIPTION_CHARS = 200_000;
+const MAX_COMMENT_CHARS = 20_000;
 const LIST_CACHE_MS = 10 * 60 * 1000;
 const MAX_PROJECTS = 500;
 const MAX_BOARDS = 500;
@@ -234,7 +235,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
 
   function renderDescription(html: unknown): string | null {
     if (typeof html !== "string" || html.trim() === "") return null;
-    return capSanitizedHtml(sanitizeJiraHtml(html, baseUrl), baseUrl, MAX_HTML_CHARS);
+    return capSanitizedHtml(sanitizeJiraHtml(html, baseUrl), baseUrl, MAX_DESCRIPTION_CHARS);
   }
 
   // Jira lists comments oldest first. Rendered and raw comments are paired by id, falling
@@ -259,7 +260,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         createdAt: typeof c.created === "string" ? c.created : "",
         bodyHtml:
           typeof body === "string"
-            ? capSanitizedHtml(sanitizeJiraHtml(body, baseUrl), baseUrl, MAX_HTML_CHARS)
+            ? capSanitizedHtml(sanitizeJiraHtml(body, baseUrl), baseUrl, MAX_COMMENT_CHARS)
             : "",
       };
     });
