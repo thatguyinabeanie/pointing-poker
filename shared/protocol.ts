@@ -39,6 +39,7 @@ export interface PlayerView {
   username: string;
   connected: boolean;
   hasVoted: boolean;
+  // Null for other players until reveal, even when hasVoted is true.
   vote: Card | null;
 }
 

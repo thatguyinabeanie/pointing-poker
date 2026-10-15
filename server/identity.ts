@@ -86,16 +86,3 @@ export function identityMode(): "proxy" | "dev" {
   if (e.NODE_ENV === "production") return "proxy";
   return e.ALLOW_DEV_USER === "1" || e.DEV_USER_ID !== undefined ? "dev" : "proxy";
 }
-
-/** Log one warning at startup when production has no way to identify anyone. */
-export function warnIfIdentityUnconfigured(
-  config: ProxyIdentityConfig,
-  warn: (message: string) => void,
-): void {
-  if (env().NODE_ENV !== "production") return;
-  if (config.userIdHeader && config.usernameHeader) return;
-  warn(
-    "IDENTITY_USER_ID_HEADER and IDENTITY_USERNAME_HEADER are not both set; " +
-      "every request will be treated as unauthenticated and /ws will close with 4401",
-  );
-}
