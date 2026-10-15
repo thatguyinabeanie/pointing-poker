@@ -1,3 +1,4 @@
+import { ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
 import type {
   JiraBoard,
   JiraProject,
@@ -58,8 +59,6 @@ const MAX_BOARDS = 500;
 const QUEUE_PAGE_SIZE = 50;
 const MAX_SPRINTS = 50;
 const SEARCH_PAGE_SIZE = 10;
-const MIN_QUERY_LENGTH = 2;
-const ISSUE_KEY = /^[A-Z][A-Z0-9]+-\d+$/i;
 
 function fail(reason: JiraErrorReason, message: string): JiraFailure {
   return { ok: false, reason, message };

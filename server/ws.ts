@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import { z } from "zod";
+import { ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
 import { DECK } from "../shared/deck.ts";
 import type { QueueSection, QueueSettings, ServerMessage } from "../shared/protocol.ts";
 import { env } from "./env.ts";
@@ -58,7 +59,7 @@ const MESSAGES = {
   bad_key: "Enter a Jira key like PP-123, or just the number.",
   invalid_points: "Pick a numeric card value.",
   save_in_progress: "A save is already running.",
-  query_too_short: "Type at least 2 characters to search.",
+  query_too_short: `Type at least ${MIN_QUERY_LENGTH} characters to search.`,
 } as const;
 
 // Game reason strings to user text, per command (the same reason reads differently per action).
@@ -443,7 +444,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       const projectKey = state.queueSettings.projectKey;
       // A bare number uses the room's project; without one it fails the key check below.
       if (/^\d+$/.test(key) && projectKey !== null) key = `${projectKey}-${key}`;
-      if (!/^[A-Z]+-\d+$/i.test(key)) {
+      if (!ISSUE_KEY.test(key)) {
         sendError(socket, "bad_key", MESSAGES.bad_key);
         return;
       }
@@ -609,7 +610,12 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       applyState(game.join(state, identity));
       log.info("ws connected");
       // Hello first, so the client knows `me` before its first snapshot.
-      send(socket, { type: "hello", me: { userId, username }, deck: [...DECK] });
+      send(socket, {
+        type: "hello",
+        me: { userId, username },
+        deck: [...DECK],
+        needsPointingLabel: label(),
+      });
       broadcast();
       bootstrap();
     } catch (err) {

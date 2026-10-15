@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MIN_QUERY_LENGTH, NEEDS_POINTING_LABEL } from "../../shared/constants.ts";
 import type { ClientCommand, QueueItem, ServerMessage, Snapshot } from "../../shared/protocol.ts";
 
 type Me = { userId: number; username: string };
 type SocketError = { id: number; message: string };
 type DisconnectedReason = "unauthenticated" | "bad_origin";
-type SearchResults = {
+export type SearchResults = {
   query: string;
   items: QueueItem[];
   error: string | null;
@@ -12,7 +13,6 @@ type SearchResults = {
 };
 
 const SEARCH_DEBOUNCE_MS = 400;
-const MIN_QUERY_LENGTH = 2;
 
 function buildUrl(): string {
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
@@ -31,6 +31,7 @@ export function useGameSocket(): {
   disconnectedReason: DisconnectedReason | null;
   search: (query: string) => void;
   searchResults: SearchResults | null;
+  needsPointingLabel: string;
 } {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -38,6 +39,8 @@ export function useGameSocket(): {
   const [error, setError] = useState<SocketError | null>(null);
   const [disconnectedReason, setDisconnectedReason] = useState<DisconnectedReason | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
+  // The default only shows before hello arrives; the server sends the configured label.
+  const [needsPointingLabel, setNeedsPointingLabel] = useState(NEEDS_POINTING_LABEL);
 
   const socketRef = useRef<WebSocket | null>(null);
   const latestQueryRef = useRef<string | null>(null);
@@ -94,6 +97,7 @@ export function useGameSocket(): {
         switch (msg.type) {
           case "hello":
             setMe(msg.me);
+            setNeedsPointingLabel(msg.needsPointingLabel);
             setConnected(true);
             attempt = 0;
             break;
@@ -185,5 +189,15 @@ export function useGameSocket(): {
     };
   }, []);
 
-  return { snapshot, me, connected, send, error, disconnectedReason, search, searchResults };
+  return {
+    snapshot,
+    me,
+    connected,
+    send,
+    error,
+    disconnectedReason,
+    search,
+    searchResults,
+    needsPointingLabel,
+  };
 }

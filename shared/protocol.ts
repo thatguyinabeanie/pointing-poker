@@ -114,7 +114,13 @@ export type ClientCommand =
   | { type: "searchTickets"; query: string };
 
 export type ServerMessage =
-  | { type: "hello"; me: { userId: number; username: string }; deck: Card[] }
+  | {
+      type: "hello";
+      me: { userId: number; username: string };
+      deck: Card[];
+      // JIRA_NEEDS_POINTING_LABEL, so the UI names the label this deployment actually uses.
+      needsPointingLabel: string;
+    }
   | { type: "state"; snapshot: Snapshot }
   | { type: "error"; id: number; reason: string; message: string }
   | { type: "searchResults"; query: string; items: QueueItem[]; error: string | null };

@@ -33,13 +33,7 @@ import type {
   QueueSettings,
   QueueState,
 } from "../../../shared/protocol.ts";
-
-export interface SearchResults {
-  query: string;
-  items: QueueItem[];
-  error: string | null;
-  pending: boolean;
-}
+import type { SearchResults } from "../useGameSocket.ts";
 
 const COLLAPSED_KEY = "pp.queue.collapsed";
 
@@ -68,6 +62,7 @@ interface Props {
   boards: JiraBoard[];
   queue: QueueState;
   searchResults: SearchResults | null;
+  needsPointingLabel: string;
   currentKey: string | null;
   disabled: boolean;
   onChangeSettings: (partial: Partial<QueueSettings>) => void;
@@ -82,6 +77,7 @@ export function QueuePanel({
   boards,
   queue,
   searchResults,
+  needsPointingLabel,
   currentKey,
   disabled,
   onChangeSettings,
@@ -282,7 +278,8 @@ export function QueuePanel({
 
         {!queue.loading && !queue.error && totalTickets === 0 ? (
           <Typography color="text.secondary">
-            No tickets need pointing. Add the needs-pointing label in Jira or change the filters.
+            No tickets need pointing. Add the {needsPointingLabel} label in Jira or change the
+            filters.
           </Typography>
         ) : (
           <Stack spacing={1}>
