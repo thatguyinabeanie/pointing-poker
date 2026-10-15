@@ -42,12 +42,12 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     players: new Map(),
     round: 0,
     jiraSave: { status: "idle" },
-    // The label filter defaults ON: a project can have thousands of unpointed tickets,
-    // and only the ones tagged for pointing are worth showing the team.
+    // The label filter defaults OFF: the label is not in use yet, so the queue
+    // shows labeled or unpointed tickets until the team starts labeling.
     queueSettings: {
       projectKey: opts.defaultProjectKey ?? null,
       boardId: null,
-      needsPointingOnly: true,
+      needsPointingOnly: false,
       clearLabelOnSave: true,
     },
     queue: { sections: [], loading: false, error: null, fetchedAt: null },

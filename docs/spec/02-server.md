@@ -18,7 +18,7 @@ Reference implementations already exist and have been reviewed: copy `game.ts`, 
 
 **`server/game.ts`** (pure, imports only `shared/`; no I/O, no logging). Exports:
 `interface Player { userId: number; username: string; connections: number; vote: Card | null }`, `interface GameState { phase: Phase; ticket: Ticket | null; players: Map<number, Player>; round: number; jiraSave: JiraSave; queueSettings: QueueSettings; queue: QueueState; projects: JiraProject[]; boards: JiraBoard[] }`, `type Result = { ok: true; state: GameState } | { ok: false; reason: string }`, and these functions:
-- `createInitialState(opts: { defaultProjectKey?: string | null } = {}): GameState` (phase idle, round 0, no ticket, jiraSave idle; settings `{ projectKey: defaultProjectKey ?? null, boardId: null, needsPointingOnly: true, clearLabelOnSave: true }`; queue empty and not loading; projects and boards empty).
+- `createInitialState(opts: { defaultProjectKey?: string | null } = {}): GameState` (phase idle, round 0, no ticket, jiraSave idle; settings `{ projectKey: defaultProjectKey ?? null, boardId: null, needsPointingOnly: false, clearLabelOnSave: true }`; queue empty and not loading; projects and boards empty).
 - `join(state, identity: { userId: number; username: string }): Result`. Always ok. Creates the player or bumps `connections` and refreshes `username`.
 - `leave(state, userId: number): Result`. Always ok. Decrements `connections` (floor 0), keeps the vote, unknown user returns the state unchanged.
 - `vote(state, userId: number, card: string): Result`. The card is a plain `string` and the function validates it. Reasons, checked in this order: `not_voting` (phase is not voting), `invalid_card` (not in `DECK`), `unknown_player`. Voting the same card again clears it.
@@ -468,7 +468,7 @@ Instead of typing a key, the team picks from a shared queue of unpointed tickets
 
 **Contract.** Types, snapshot fields and commands are in section 3. `Snapshot` gains `queueSettings`, `queue`, `projects`, `boards`; every viewer receives them unchanged. `ClientCommand` gains `setQueueSettings`, `refreshQueue`, `refreshProjects`, `searchTickets`. `ServerMessage` gains `searchResults`. `NEEDS_POINTING_LABEL` is in `shared/constants.ts`.
 
-**Why the labeled-only filter defaults on.** A ticket needs pointing if it is labeled or unpointed, and the team's main project has thousands of open unpointed tickets, so the wider queue is not usable by default. The convention is the label `needs-pointing`; no such label exists in Jira yet, so the filtered list starts empty until someone applies it.
+**Why the labeled-only filter defaults off.** A ticket needs pointing if it is labeled or unpointed. The switch starts off (decided 10/15/2026) because the label is not in use yet: no such label exists in Jira, so with the switch on the list would start empty. Board scoping and sprint sections keep the wider list manageable. The convention is the label `needs-pointing`; teams can turn "Labeled only" on once they start applying it.
 
 **Game mutators (pure, in `game.ts`).**
 - `setQueueSettings(state, partial)`: merges the partial. Changing `projectKey` resets `boardId` to null and clears `boards` (the project change wins even if the same message named a board). Any effective change sets `queue.loading` true. A message that changes nothing returns the same state object, which the server uses to skip the refetch.

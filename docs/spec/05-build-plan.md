@@ -292,7 +292,7 @@ The build session prepares this list. The user does the steps in the hosting pla
 - [ ] WebSocket Origin check passes behind the auth proxy. If not, `ALLOWED_ORIGINS` is set.
 - [ ] Assets load at the service root. `base` changes only if the platform uses a path prefix.
 - [ ] Add the `needs-pointing` label to 3 real tickets in Jira. Confirm all 3 appear in the
-      queue with the switch on.
+      queue with Labeled only switched on.
 
 ## Definition of done
 
