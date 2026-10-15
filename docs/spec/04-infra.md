@@ -1,6 +1,6 @@
 # Pointing Poker: infrastructure spec
 
-Audience: the build session finishing the scaffold, and whoever sets up the platform service and GitHub Actions. The repo at `/Users/gmendoza/source/pointing-poker` (commit `5665462`) is the source of truth for file contents. "Verified" means the scaffold spike, run October 15, 2026.
+Audience: the build session finishing the scaffold, and whoever sets up the platform service and GitHub Actions. The repo at `~/source/pointing-poker` (commit `5665462`) is the source of truth for file contents. "Verified" means the scaffold spike, run October 15, 2026.
 
 ## 1. Toolchain
 

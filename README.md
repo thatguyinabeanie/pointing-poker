@@ -7,7 +7,7 @@ as a service on the hosting platform, and it has one shared room per deployed in
 
 ## Running locally
 
-1. Copy `.env.example` to `.env` and fill in the values. Set `ALLOW_DEV_USER=1` so the
+1. Copy `docs/spec/env-example.txt` to `.env` (`cp docs/spec/env-example.txt .env`) and fill in the values. Set `ALLOW_DEV_USER=1` so the
    `?devUser=` shortcut works.
 2. Install Node 26 and npm 12 with `mise trust && mise install` (the versions pinned in
    `mise.toml`), then install dependencies with `npm install`.

@@ -463,7 +463,7 @@ Instead of typing a key, the team picks from a shared queue of unpointed tickets
 
 **Contract.** Types, snapshot fields and commands are in section 3. `Snapshot` gains `queueSettings`, `queue`, `projects`, `boards`; every viewer receives them unchanged. `ClientCommand` gains `setQueueSettings`, `refreshQueue`, `refreshProjects`, `searchTickets`. `ServerMessage` gains `searchResults`. `NEEDS_POINTING_LABEL` is in `shared/constants.ts`.
 
-**Why the label filter defaults on.** The team's main project has about 2,175 open unpointed tickets (a figure from the product decision, not re-verified here), so an unfiltered queue is not usable. The convention is the label `needs-pointing`; no such label exists in Jira yet, so the filtered list starts empty until someone applies it.
+**Why the label filter defaults on.** The team's main project has thousands of open unpointed tickets, so an unfiltered queue is not usable. The convention is the label `needs-pointing`; no such label exists in Jira yet, so the filtered list starts empty until someone applies it.
 
 **Game mutators (pure, in `game.ts`).**
 - `setQueueSettings(state, partial)`: merges the partial. Changing `projectKey` resets `boardId` to null and clears `boards` (the project change wins even if the same message named a board). Any effective change sets `queue.loading` true. A message that changes nothing returns the same state object, which the server uses to skip the refetch.

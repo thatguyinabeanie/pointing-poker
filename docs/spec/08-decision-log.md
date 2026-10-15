@@ -30,7 +30,7 @@ Numbers are stable references; new decisions are appended, never renumbered.
 
 ## Tickets
 
-15. **Queue scoped by project, optional board, and the needs-pointing label.** The team's main project has 2,175 unpointed open tickets and no pointing label existed, so an unfiltered list is useless.
+15. **Queue scoped by project, optional board, and the needs-pointing label.** The team's main project has thousands of open unpointed tickets and no pointing label existed, so an unfiltered list is useless.
 16. **Free-text search with per-user results.** Search is one person's lookup, so results go only to the requesting socket and are not room state.
 17. **Full description and comments rendered from Jira HTML, sanitized on the server.** One place does the cleaning, and the client never trusts markup.
 
@@ -50,6 +50,7 @@ Numbers are stable references; new decisions are appended, never renumbered.
 26. **CircleCI removed in favor of GitHub Actions (10/15/2026).** The repo lives on GitHub, so `.github/workflows/ci.yml` replaces `.circleci/config.yml` with the same gates.
 27. **CI publishes to Docker Hub on main (10/15/2026).** The `publish` job pushes `:<short-sha>` and `:latest` as linux/amd64 after `checks` pass, using repo secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`.
 28. **Docker Hub repo is public (10/15/2026).** The hosting platform cannot pull private images: its pre-deploy image check uses its own Docker Hub account, and it has no pull-secret support.
+29. **Repo is now public, and pre-PR history was squashed (10/15/2026).** This supersedes the private visibility in decision 24. Before the first PR the history was squashed so no internal names remain in any commit.
 
 ## Where each decision is specified
 

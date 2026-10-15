@@ -68,7 +68,7 @@ test script.
 
 - `*/` inside a JSDoc block ends the comment early. Do not put a glob such as `server/**/*.ts`
   inside `/** */`.
-- Tools cannot read `.env*` files (they are deny-listed). Change `.env.example` instead, and
+- Tools cannot read `.env*` files (they are deny-listed). Change `docs/spec/env-example.txt` instead, and
   keep it to variable names with no values.
 - Vite's HMR socket shares the Fastify server. A dev-only `onRequest` hook in
   `server/routes/spa.ts` hijacks `vite-hmr` upgrades so `@fastify/websocket` leaves them to Vite.

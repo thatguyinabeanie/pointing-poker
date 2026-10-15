@@ -263,13 +263,13 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
 
 ## Step 7: create a feature branch and open a draft PR
 
-- **Goal:** The repo `thatguyinabeanie/pointing-poker` already exists (private, personal space) and `main` is pushed. Create a feature branch and open a draft PR.
+- **Goal:** The repo `thatguyinabeanie/pointing-poker` already exists (public, personal space) and `main` is pushed. Create a feature branch and open a draft PR.
 - **Files touched:** None.
-- **Visibility:** private (decided).
+- **Visibility:** public (changed from private, see decision 29 in `08-decision-log.md`).
 - **Subagent:** None. Run in the main session.
 - **Parallel:** No.
 - **Acceptance:**
-  - [ ] `gh repo view thatguyinabeanie/pointing-poker --json visibility,url` shows `PRIVATE`.
+  - [ ] `gh repo view thatguyinabeanie/pointing-poker --json visibility,url` shows `PUBLIC`.
   - [ ] `git log --oneline -5` on `main` matches the local history.
   - [ ] `gh pr view --json isDraft,labels` shows `isDraft: true` and the label `> 90% ai generated`.
   - [ ] PR body is current and ends with the attribution line the session requires.
@@ -321,13 +321,13 @@ Taken from the planning document's step 0 assumptions and its Jira notes.
 | Story Points field lookup | The field name may differ or be missing | `JIRA_STORY_POINTS_FIELD` overrides the lookup. The plan says Story Points exists in the team's main project |
 | Dev identity override | `?devUser=` must never work in production | Gated on `NODE_ENV` and `ALLOW_DEV_USER`. The Docker image sets `NODE_ENV=production` |
 | Jira token for boards and labels | The queue reads projects and boards through the Agile API, and removes labels through the issue API. The token needs browse on projects and boards, and edit on issues (labels and Story Points) | Board calls fail with 401 or 403: the board list stays empty, and the project-only queue still works. Label removal fails: Story Points is still saved, but the ticket stays in the queue until someone removes the label |
-| Label adoption | No ticket has `needs-pointing` yet. With the switch on, the queue is empty. The team's main project has 2,175 open unpointed tickets today | The team adds the label to the tickets it wants in the queue, or turns the switch off and scopes by board. Decide before launch |
+| Label adoption | No ticket has `needs-pointing` yet. With the switch on, the queue is empty. The team's main project has thousands of open unpointed tickets today | The team adds the label to the tickets it wants in the queue, or turns the switch off and scopes by board. Decide before launch |
 
 ## Resolved questions
 
 The planning document left these open. They are decided, and the steps above reflect them.
 
-1. **Repo visibility:** private, in the personal GitHub space (`thatguyinabeanie/pointing-poker`).
+1. **Repo visibility:** public (originally private; see `08-decision-log.md`), in the personal GitHub space (`thatguyinabeanie/pointing-poker`).
 2. **Repo creation order:** the repo already exists, so no `gh repo create` runs. Step 7 creates a feature branch and a draft PR after steps 0 to 6.
 3. **CI test step:** none. The build has no tests, so CI has no `test` step, and the `npm test`
    gate in CLAUDE.md is dropped (`02-server.md` sections 1 and 13).
