@@ -80,6 +80,20 @@ export function resolveIdentity(req: {
   return getProxyIdentity(headers, req.url, config);
 }
 
+/**
+ * Startup warning for a production deploy that can identify no one. Without it the only
+ * symptom is every socket closing with 4401, which looks like a proxy problem, not config.
+ */
+export function identityConfigWarning(): string | null {
+  const e = env();
+  if (e.NODE_ENV !== "production") return null;
+  if (e.IDENTITY_USER_ID_HEADER && e.IDENTITY_USERNAME_HEADER) return null;
+  return (
+    "IDENTITY_USER_ID_HEADER and IDENTITY_USERNAME_HEADER are not both set; " +
+    "every request will be treated as unauthenticated and /ws will close with 4401"
+  );
+}
+
 /** Reported at startup as `identity mode: proxy|dev`. */
 export function identityMode(): "proxy" | "dev" {
   const e = env();

@@ -82,17 +82,22 @@ export function getProxyIdentity(
   requestUrl: string,
   config: ProxyIdentityConfig,
 ): ProxyIdentity | null {
-  if (config.userIdHeader && config.usernameHeader) {
+  // A present user-id key decides the source even when its username partner is not configured:
+  // that is a half-configured proxy, and it fails closed instead of falling through to
+  // DEV_USER_ID, which would hand every proxied request the same fake identity.
+  if (config.userIdHeader) {
     const headerUserId = headers.get(config.userIdHeader);
     if (headerUserId !== null) {
+      if (!config.usernameHeader) return null;
       return buildIdentity(headerUserId, headers.get(config.usernameHeader));
     }
   }
 
-  if (config.userIdQuery && config.usernameQuery) {
+  if (config.userIdQuery) {
     const url = new URL(requestUrl, "http://localhost");
     const queryUserId = url.searchParams.get(config.userIdQuery);
     if (queryUserId !== null) {
+      if (!config.usernameQuery) return null;
       return buildIdentity(queryUserId, url.searchParams.get(config.usernameQuery));
     }
   }

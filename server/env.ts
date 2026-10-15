@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { NEEDS_POINTING_LABEL } from "../shared/constants.ts";
 
+// A header or query-param name. " " or "X-User-Id " would never match a request, so they
+// are trimmed and a whitespace-only value counts as unset, like a blank one does.
+function identityName() {
+  return z
+    .string()
+    .trim()
+    .transform((value) => (value === "" ? undefined : value))
+    .optional();
+}
+
 // Every field is optional or defaulted, so an empty environment parses. Blank values are
 // dropped before parsing (see env()), which is what keeps optional fields undefined.
 const schema = z.object({
@@ -33,10 +43,10 @@ const schema = z.object({
         .filter(Boolean),
     ),
   ALLOW_DEV_USER: z.string().optional(),
-  IDENTITY_USER_ID_HEADER: z.string().optional(),
-  IDENTITY_USERNAME_HEADER: z.string().optional(),
-  IDENTITY_USER_ID_QUERY: z.string().optional(),
-  IDENTITY_USERNAME_QUERY: z.string().optional(),
+  IDENTITY_USER_ID_HEADER: identityName(),
+  IDENTITY_USERNAME_HEADER: identityName(),
+  IDENTITY_USER_ID_QUERY: identityName(),
+  IDENTITY_USERNAME_QUERY: identityName(),
   DEV_USER_ID: z.string().optional(),
   DEV_USERNAME: z.string().optional(),
 });

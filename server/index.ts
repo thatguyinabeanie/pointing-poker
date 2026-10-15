@@ -1,6 +1,6 @@
 import { buildApp } from "./app.ts";
 import { env } from "./env.ts";
-import { identityMode } from "./identity.ts";
+import { identityConfigWarning, identityMode } from "./identity.ts";
 
 // Loaded here rather than with `node --env-file-if-exists`: on Node 26.12 that flag makes
 // `--watch-path` track imported modules again, and Vite's per-start temp config file
@@ -19,6 +19,8 @@ const { PORT, JIRA_BASE_URL, JIRA_API_TOKEN_USERNAME, JIRA_API_TOKEN_PASSWORD, A
 // 0.0.0.0 because the platform's auth proxy reaches the container over its network interface, not loopback.
 await app.listen({ host: "0.0.0.0", port: PORT });
 app.log.info(`identity mode: ${identityMode()}`);
+const identityWarning = identityConfigWarning();
+if (identityWarning !== null) app.log.warn(identityWarning);
 // Booleans only; never log the values.
 app.log.info(
   {
