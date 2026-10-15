@@ -1,0 +1,33 @@
+# dependencies
+/node_modules
+
+# testing
+/coverage
+/test-results
+
+# production (vite build output, incl. the dist/vite.config.json @fastify/vite reads at runtime)
+/dist
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+
+# env files — never commit real values; .env.example is the documented template
+.env*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+
+# local tooling overrides
+mise.local.toml
+# a global gitignore may exclude mise.toml; this repo shares its pins
+!mise.toml
+# The user's global gitignore excludes CLAUDE.md; this repo wants it tracked.
+!CLAUDE.md
+
+# subagent-driven-development scratch space (ledger, briefs, reports)
+/.superpowers

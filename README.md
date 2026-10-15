@@ -1,0 +1,3 @@
+# Pointing Poker
+
+A small pointing-poker app that runs behind a hosting platform with an auth proxy: load a Jira ticket, everyone picks a card, reveal, and save the agreed Story Points back to Jira. It is one Fastify 5 server on Node 26 (running TypeScript directly via type stripping) that serves a Vite-built React + MUI client and a WebSocket at `/ws`; identity comes from the auth proxy's headers (names set via `IDENTITY_USER_ID_HEADER` / `IDENTITY_USERNAME_HEADER`), and game state lives in memory, so the service runs as a single replica. Use `mise install`, `npm ci`, then `npm run dev` for local development on port 3838.

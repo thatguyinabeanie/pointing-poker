@@ -1,0 +1,4 @@
+[tools]
+# Keep in sync with .node-version, which the Dockerfile asserts against its FROM tag.
+node = "26"
+npm = "12"
