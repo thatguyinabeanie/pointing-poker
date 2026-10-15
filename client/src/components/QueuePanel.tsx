@@ -22,7 +22,15 @@ import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { type ChangeEvent, type ReactNode, useCallback, useId, useMemo, useState } from "react";
+import {
+  type ChangeEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import type {
   JiraBoard,
   JiraProject,
@@ -31,27 +39,29 @@ import type {
   QueueSettings,
   QueueState,
 } from "../../../shared/protocol.ts";
+import { readJson, removeItem, writeJson } from "../storage.ts";
 import type { SearchResults } from "../useGameSocket.ts";
 
+// localStorage, so collapse state follows the viewer across tabs and visits.
 const COLLAPSED_KEY = "pp.queue.collapsed";
+// sessionStorage (per tab), so two open tabs never overwrite each other's search.
+const QUERY_KEY = "pp.search.query";
 
-// Collapse state is a per-viewer convenience, so storage failures are ignored.
 function readCollapsed(): string[] {
-  try {
-    const raw = localStorage.getItem(COLLAPSED_KEY);
-    const parsed: unknown = raw === null ? [] : JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
-  } catch {
-    return [];
-  }
+  return (
+    readJson("local", COLLAPSED_KEY, (v) =>
+      Array.isArray(v) ? v.filter((id): id is string => typeof id === "string") : null,
+    ) ?? []
+  );
 }
 
-function writeCollapsed(ids: string[]): void {
-  try {
-    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(ids));
-  } catch {
-    // Storage can be blocked or full; the in-memory state still works.
-  }
+function readQuery(): string {
+  return readJson("session", QUERY_KEY, (v) => (typeof v === "string" ? v : null)) ?? "";
+}
+
+function writeQuery(text: string): void {
+  if (text === "") removeItem("session", QUERY_KEY);
+  else writeJson("session", QUERY_KEY, text);
 }
 
 interface Props {
@@ -83,13 +93,20 @@ export function QueuePanel({
 }: Props) {
   const projectLabelId = useId();
   const boardLabelId = useId();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState<string>(readQuery);
   const [collapsed, setCollapsed] = useState<string[]>(readCollapsed);
+
+  // A search sent while the socket is down is dropped, so a query restored after a refresh is
+  // re-sent each time the connection comes up. This also refreshes results after a reconnect.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the connection only; typing already sends its own search
+  useEffect(() => {
+    if (!disabled && query !== "") onSearch(query);
+  }, [disabled]);
 
   const onToggleSection = useCallback((id: string) => {
     setCollapsed((prev) => {
       const next = prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id];
-      writeCollapsed(next);
+      writeJson("local", COLLAPSED_KEY, next);
       return next;
     });
   }, []);
@@ -128,6 +145,7 @@ export function QueuePanel({
   const onQueryChange = useCallback(
     (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setQuery(e.target.value);
+      writeQuery(e.target.value);
       onSearch(e.target.value);
     },
     [onSearch],

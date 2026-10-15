@@ -141,6 +141,7 @@ export function App() {
             <Box sx={{ flexShrink: { lg: 0 } }}>
               <ActionBar
                 phase={snapshot.phase}
+                round={snapshot.round}
                 stats={snapshot.stats}
                 ticket={snapshot.ticket}
                 deck={DECK}

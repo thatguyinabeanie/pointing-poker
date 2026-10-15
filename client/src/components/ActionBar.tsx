@@ -10,9 +10,26 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { isNumericCard } from "../../../shared/deck.ts";
 import type { JiraSave, Phase, Snapshot, Ticket } from "../../../shared/protocol.ts";
 import { suggestPoints } from "../lib/estimate.ts";
+import { readJson, removeItem, writeJson } from "../storage.ts";
+
+// sessionStorage (per tab), so a refresh keeps the pick but two tabs never overwrite each other.
+const PICK_KEY = "pp.points.pick";
+
+type StoredPick = { ticketKey: string; round: number; points: string };
+
+function readPick(): StoredPick | null {
+  return readJson("session", PICK_KEY, (v) => {
+    if (typeof v !== "object" || v === null) return null;
+    const { ticketKey, round, points } = v as Record<string, unknown>;
+    return typeof ticketKey === "string" && typeof round === "number" && typeof points === "string"
+      ? { ticketKey, round, points }
+      : null;
+  });
+}
 
 interface Props {
   phase: Phase;
+  round: number;
   stats: Snapshot["stats"];
   ticket: Ticket | null;
   deck: readonly string[];
@@ -31,6 +48,7 @@ const RESET_LABEL: Record<Phase, string> = {
 
 export function ActionBar({
   phase,
+  round,
   stats,
   ticket,
   deck,
@@ -42,12 +60,28 @@ export function ActionBar({
 }: Props) {
   const labelId = useId();
   const [points, setPoints] = useState<string>("");
+  const ticketKey = ticket?.key ?? null;
 
-  // Re-suggest on a new reveal or ticket, so a new reveal never keeps a stale pick.
+  // Re-suggest on a new reveal, ticket or round, so a new reveal never keeps a stale pick. The
+  // one exception is a refresh mid-reveal: a manual pick stored for this exact ticket and round
+  // is restored. Any other stored pick is stale and is dropped.
   // biome-ignore lint/correctness/useExhaustiveDependencies: deck is stable; stats is omitted so a manual pick survives later snapshots
   useEffect(() => {
+    const stored = readPick();
+    if (
+      stored !== null &&
+      phase === "revealed" &&
+      stored.ticketKey === ticketKey &&
+      stored.round === round &&
+      deck.includes(stored.points) &&
+      isNumericCard(stored.points)
+    ) {
+      setPoints(stored.points);
+      return;
+    }
+    removeItem("session", PICK_KEY);
     setPoints(suggestPoints(stats, deck) ?? "");
-  }, [phase, ticket?.key]);
+  }, [phase, ticketKey, round]);
 
   const saving = jiraSave.status === "saving";
   const canSave = phase === "revealed" && ticket !== null && points !== "" && !saving;
@@ -57,9 +91,15 @@ export function ActionBar({
     () => onReset({ clearTicket: phase === "revealed" }),
     [onReset, phase],
   );
+  // Only a manual pick is stored; the suggestion is recomputed from stats on restore anyway.
   const onPointsChange = useCallback(
-    (e: { target: { value: string } }) => setPoints(e.target.value),
-    [],
+    (e: { target: { value: string } }) => {
+      setPoints(e.target.value);
+      if (ticketKey !== null) {
+        writeJson("session", PICK_KEY, { ticketKey, round, points: e.target.value });
+      }
+    },
+    [ticketKey, round],
   );
   const onSaveClick = useCallback(() => onSave(Number(points)), [onSave, points]);
 
