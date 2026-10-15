@@ -24,7 +24,8 @@ no observers, no room codes. Jira write-back (Story Points) is in v1.
   shared room state, held in memory with the
   rest of the game. The server runs the search when settings change, when someone refreshes, and
   after each save, then sends the same list to every viewer. The search box sends a separate
-  `searchTickets {query}` command. It matches an exact key, or runs `text ~ "query*"`, and returns
+  `searchTickets {query}` command. It matches an exact key (a bare number such as `14417` becomes `PROJECT-14417` when the room
+  has a project, the same expansion loadTicket uses), or runs `text ~ "query*"`, and returns
   the top 10. The result goes back only to the viewer who searched, as `searchResults`.
 - Only `server/jira.ts` talks to Jira. It reads a ticket, lists projects and boards, runs the queue
   search, and writes Story Points, all with the same
