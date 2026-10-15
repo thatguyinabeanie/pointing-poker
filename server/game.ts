@@ -215,6 +215,14 @@ export function markSave(state: GameState, save: JiraSave): Result {
     if (state.phase !== "revealed") return fail("not_revealed");
     if (!state.ticket) return fail("no_ticket");
   }
+  // Jira now holds these points, so the ticket's Current chip shows them without a reload.
+  if (save.status === "saved" && state.ticket) {
+    return ok({
+      ...state,
+      jiraSave: save,
+      ticket: { ...state.ticket, currentPoints: save.points },
+    });
+  }
   return ok({ ...state, jiraSave: save });
 }
 
