@@ -19,6 +19,10 @@ services:
     env_file:
       - path: .env
         required: false
+    # The image sets NODE_ENV=production. Pin it here too: environment beats env_file, so a blank
+    # NODE_ENV in .env cannot switch the container to development mode.
+    environment:
+      NODE_ENV: production
     restart: unless-stopped
     healthcheck:
       # The alpine image ships no curl, so use Node's built-in fetch.

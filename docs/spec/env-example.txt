@@ -13,8 +13,6 @@ JIRA_NEEDS_POINTING_LABEL=
 JIRA_STORY_POINTS_FIELD=
 
 # Server
-# Set NODE_ENV=production on deployed instances (the Docker image already does)
-NODE_ENV=
 PORT=
 LOG_LEVEL=
 # Optional: comma-separated Origin hosts allowed on the WebSocket (defaults to the Host header)
@@ -28,7 +26,7 @@ IDENTITY_USERNAME_HEADER=
 IDENTITY_USER_ID_QUERY=
 IDENTITY_USERNAME_QUERY=
 
-# Local-only identity (ignored when NODE_ENV=production)
+# Local-only identity (ignored in production)
 DEV_USER_ID=
 DEV_USERNAME=
 # Set to 1 to allow ?devUser=<name> for multi-player local testing
