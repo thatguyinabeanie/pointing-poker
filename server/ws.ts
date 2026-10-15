@@ -2,7 +2,7 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import { z } from "zod";
 import { DECK } from "../shared/deck.ts";
-import type { QueueItem, QueueSettings, ServerMessage } from "../shared/protocol.ts";
+import type { QueueSection, QueueSettings, ServerMessage } from "../shared/protocol.ts";
 import { env } from "./env.ts";
 import * as game from "./game.ts";
 import { trackSocket } from "./heartbeat.ts";
@@ -194,10 +194,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       applyState(game.setQueueLoading(state));
       broadcast();
     }
-    let outcome: { items: QueueItem[] } | { error: string };
+    let outcome: { sections: QueueSection[] } | { error: string };
     try {
       const res = await jira.searchQueue(state.queueSettings, label());
-      outcome = res.ok ? { items: res.value } : { error: res.message };
+      outcome = res.ok ? { sections: res.value } : { error: res.message };
       if (!res.ok) app.log.warn({ reason: res.reason }, "queue fetch failed");
     } catch (err) {
       app.log.error({ err }, "queue fetch threw");
@@ -208,7 +208,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       return;
     }
     applyState(game.setQueue(state, outcome, new Date().toISOString()));
-    if ("items" in outcome) app.log.info({ count: outcome.items.length }, "queue refreshed");
+    if ("sections" in outcome) {
+      const count = outcome.sections.reduce((sum, s) => sum + s.items.length, 0);
+      app.log.info({ count }, "queue refreshed");
+    }
     broadcast();
   }
 

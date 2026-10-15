@@ -107,7 +107,11 @@ export interface QueueSettings { projectKey: string | null; boardId: number | nu
 export interface QueueItem { key: string; summary: string; issueType: string; status: string; url: string }
 export interface JiraProject { key: string; name: string }
 export interface JiraBoard { id: number; name: string; type: string }
-export interface QueueState { items: QueueItem[]; loading: boolean; error: string | null; fetchedAt: string | null }
+export type QueueSectionKind = 'active' | 'future' | 'backlog' | 'all';
+// id is "sprint-<sprintId>", "backlog" or "all"; name is the sprint name, "Backlog" or "Tickets".
+// total counts matching tickets in Jira and may exceed items.length (per-section cap 50).
+export interface QueueSection { id: string; name: string; kind: QueueSectionKind; total: number; items: QueueItem[] }
+export interface QueueState { sections: QueueSection[]; loading: boolean; error: string | null; fetchedAt: string | null }
 export interface Snapshot {
   phase: Phase;
   round: number;
@@ -392,7 +396,7 @@ Alice          ws.ts                                   Jira
   |--setQueueSettings {needsPointingOnly:false}-->| game.setQueueSettings (loading)
   |<--state (all, queue.loading)--| 
   |                    |--searchQueue (seq=++queueSeq)-->|
-  |                    |<--items or failure--------------|
+  |                    |<--sections or failure--------------|
   |                    | seq != queueSeq? drop
   |<--state (all)------| game.setQueue(items) or queue.error
   |--loadTicket "PP-7"-->| (item key from the queue; same flow as Load ticket)
@@ -418,7 +422,7 @@ Search tickets:
 Alice          ws.ts                                   Jira
   |--searchTickets "dashboard"-->| mySeq=++searchSeq (this socket)
   |                    |--searchTickets(projectKey, q)-->|
-  |                    |<--items or failure--------------|
+  |                    |<--sections or failure--------------|
   |                    | mySeq != searchSeq? drop
   |<--searchResults (Alice only)
 ```
@@ -469,14 +473,17 @@ Instead of typing a key, the team picks from a shared queue of unpointed tickets
 **Game mutators (pure, in `game.ts`).**
 - `setQueueSettings(state, partial)`: merges the partial. Changing `projectKey` resets `boardId` to null and clears `boards` (the project change wins even if the same message named a board). Any effective change sets `queue.loading` true. A message that changes nothing returns the same state object, which the server uses to skip the refetch.
 - `setQueueLoading(state)`: sets `queue.loading` true.
-- `setQueue(state, { items } | { error }, fetchedAt)`: success replaces items, clears the error and sets `fetchedAt` (an ISO string passed in, because game.ts does no I/O). Failure keeps the previous items and `fetchedAt`, sets `error`, and clears `loading`.
+- `setQueue(state, { sections } | { error }, fetchedAt)`: success replaces the sections, clears the error and sets `fetchedAt` (an ISO string passed in, because game.ts does no I/O). Failure keeps the previous sections and `fetchedAt`, sets `error`, and clears `loading`.
 - `setProjects(state, list)` and `setBoards(state, list)`.
 
 **Jira client methods (`jira.ts`).** All return the same `Result` type and error mapping; the token never appears in a message.
 - `listProjects()`: `GET /rest/api/3/project/search?orderBy=key&maxResults=100&startAt=N`, paginated until `isLast`, capped at 500, mapped to `{ key, name }`, cached 10 minutes in the client instance.
 - `listBoards(projectKey)`: `GET /rest/agile/1.0/board?projectKeyOrId={key}&maxResults=50&startAt=N`, paginated until `isLast`, mapped to `{ id, name, type }`, cached 10 minutes per project.
-- `boardFilterId(boardId)`: `GET /rest/agile/1.0/board/{id}/configuration`, returns `filter.id` as a number, cached per board.
-- `searchQueue(settings, label)`: returns `not_configured` when `projectKey` is null. JQL is `project = "KEY" AND statusCategory != Done`, plus ` AND labels = "label"` when `needsPointingOnly` (labeled tickets, pointed or not, so they can be re-pointed) or ` AND (labels = "label" OR <points> is EMPTY)` when it is off (a ticket needs pointing if it is labeled or unpointed), plus ` AND filter = <filterId>` when `boardId` is set, plus ` ORDER BY Rank ASC`. `<points>` is `cf[NNNNN]` when the Story Points field id is known (override or discovery), else `"Story Points"`. Values are escaped for JQL strings. The board is applied through its filter id so every combination of settings uses one JQL path and one search endpoint, instead of a second agile endpoint with different paging and ordering. Call `POST /rest/api/3/search/jql` with `{ jql, fields: ["summary","issuetype","status"], maxResults: 50 }`; the old `GET /rest/api/3/search` is deprecated. One page is enough, so `nextPageToken` is ignored. Items map to `QueueItem` with url `{base}/browse/{key}`.
+- `boardType(boardId)`: `GET /rest/agile/1.0/board/{id}/configuration`, returns the lowercased `type` (`scrum`, `kanban`), cached per board.
+- `searchQueue(settings, label)`: returns `not_configured` when `projectKey` is null, else `QueueSection[]`. The needs-pointing clause is `statusCategory != Done AND labels = "label"` when `needsPointingOnly` (labeled tickets, pointed or not, so they can be re-pointed), or `statusCategory != Done AND (labels = "label" OR <points> is EMPTY)` when it is off. `<points>` is `cf[NNNNN]` when the Story Points field id is known (override or discovery), else `"Story Points"`. Values are escaped for JQL strings.
+  - No board: `POST /rest/api/3/search/jql` with `project = "KEY" AND <clause> ORDER BY Rank ASC`, `fields: ["summary","issuetype","status"]`, `maxResults: 50` (the old `GET /rest/api/3/search` is deprecated). Returned as one section `{ id: "all", name: "Tickets", kind: "all", total, items }`; `/search/jql` has no total, so when `nextPageToken` shows more results `total` comes from `POST /rest/api/3/search/approximate-count`, else it is `items.length`.
+  - Board: the board type comes from `boardType`. The Agile API mirrors the board's backlog page and applies the board's own filter, so there is no `filter = <id>`, no project clause and no `ORDER BY` (rank order is the default). Every call is `GET` with `jql=<url-encoded clause>&maxResults=50&fields=summary,issuetype,status`. Scrum: `GET /board/{id}/sprint?state=active,future&maxResults=50&startAt=N` (paginated until `isLast`, capped at 50 sprints, active sprints first then future, otherwise in API order), then one section per sprint from `GET /board/{id}/sprint/{sprintId}/issue` (`id: "sprint-<sprintId>"`, `kind` from the sprint state), then `GET /board/{id}/backlog` (`id: "backlog"`, name "Backlog"). Kanban or any non-scrum type: the backlog endpoint only; if it errors (backlog disabled) fall back to `GET /board/{id}/issue` as one section `{ id: "all", name: "Tickets", kind: "all" }`. Sections are fetched in parallel in that order, `total` is each response's `total`, and sections with total 0 are dropped.
+  - Any failed section fails the whole refresh with the usual error mapping (no partial queues). Items map to `QueueItem` with url `{base}/browse/{key}`.
 - `removeLabel(key, label)`: `PUT /rest/api/3/issue/{key}` with `{ update: { labels: [{ remove: label }] } }`, expects 204. A 400 maps to `jira_error` with Jira's message (not `field_not_editable`, which is specific to the points field).
 - `searchTickets(projectKey, query)`: trims the query; under 2 characters returns `query_too_short`. A query matching `/^[A-Z][A-Z0-9]+-\d+$/i` searches `key = "KEY"` (uppercased, any project). Anything else searches `[project = "KEY" AND ]text ~ "<escaped>*"`, with the project clause only when `projectKey` is set. Always `AND statusCategory != Done ORDER BY updated DESC`, `maxResults` 10, same endpoint and fields as above. Double quotes and backslashes in the query are escaped.
 
@@ -484,7 +491,7 @@ Instead of typing a key, the team picks from a shared queue of unpointed tickets
 
 **Flows.** Each fetch helper returns without error when Jira is not configured: the failure goes into `queue.error` (`not_configured` message) and the lists stay empty.
 1. Bootstrap: on the first socket connection (after the hello and first broadcast), if `!bootstrapped`, set it true and run, each followed by `broadcast()`: `listProjects` then `setProjects`; `listBoards(defaultProject)` then `setBoards`; the queue fetch. The projects fetch runs concurrently with the rest. When `JIRA_DEFAULT_BOARD` is set, the queue fetch waits for the boards fetch: if the value is all digits it is matched by board id, otherwise by board name (case-insensitive, trimmed). Exactly one match sets `boardId` through `setQueueSettings`; no match, an ambiguous name (more than one board), or a failed boards fetch logs one warn (no secrets) and leaves `boardId` null, so the first queue fetch never uses an unresolved board. A user change to the project or board during the fetch wins. Without the variable, the three run concurrently as before. Failures in the two lists are logged at warn and leave the lists empty; the queue failure goes to `queue.error`.
-2. Queue fetch helper: `const seq = ++queueSeq`; `setQueueLoading`, broadcast; `searchQueue(state.queueSettings, label)`; if `seq !== queueSeq` drop silently (debug log); otherwise `setQueue` with items or `{ error: res.message }` and `new Date().toISOString()`, then broadcast. A throw becomes an error string "Could not load the queue."
+2. Queue fetch helper: `const seq = ++queueSeq`; `setQueueLoading`, broadcast; `searchQueue(state.queueSettings, label)`; if `seq !== queueSeq` drop silently (debug log); otherwise `setQueue` with sections or `{ error: res.message }` and `new Date().toISOString()`, then broadcast. A throw becomes an error string "Could not load the queue."
 3. Boards fetch helper: `const seq = ++boardsSeq`; `listBoards(projectKey)`; drop if stale or if `state.queueSettings.projectKey` changed; otherwise `setBoards`, broadcast. A null project key clears nothing and fetches nothing.
 4. `setQueueSettings`: `const next = game.setQueueSettings(state, settings)`; if the returned state is the same object, do nothing. Otherwise apply, broadcast (loading true), then if the project changed run the boards fetch helper and the queue fetch helper concurrently, else only the queue fetch helper. Ids that the Jira lookup cannot resolve (for example a deleted board) arrive as `queue.error`.
 5. `refreshQueue`: if `Date.now() - lastQueueRefreshAt < 5000`, ignore silently. Otherwise set `lastQueueRefreshAt` and run the queue fetch helper. Setting changes and post-save refreshes are not rate limited by this rule and do not update `lastQueueRefreshAt`.
@@ -492,4 +499,4 @@ Instead of typing a key, the team picks from a shared queue of unpointed tickets
 7. After a successful `saveEstimate` (the `saved` transition, not the stale-round path): if `state.queueSettings.clearLabelOnSave`, `await jira.removeLabel(key, label)`. On failure log warn (`reason`, `key`) and `sendError(socket, res.reason, res.message)` to the saver only; the save is not undone. Then run the queue fetch helper regardless, so the ticket (which now has points) leaves the list. If the save finished for a stale round, the key is still known from the captured `key`, so the label removal and refresh still run; only the `markSave` and broadcast are skipped.
 8. `searchTickets`: `const mySeq = ++socketSearchSeq` (per socket). Call `jira.searchTickets(state.queueSettings.projectKey, query)`. If `mySeq !== socketSearchSeq` after the await, drop. Otherwise `send(socket, { type: 'searchResults', query, items, error })` to that socket only. Failures set `items: []` and `error` to the Jira message; `query_too_short` uses "Type at least 2 characters to search." There is no game call and no broadcast. Because every new query bumps the counter, there is effectively one deliverable search per socket at a time.
 
-**Logging.** Info: queue refreshed (item count, never summaries). Warn: label removal failure, list fetch failure. Debug: dropped stale queue or search results, ignored refreshQueue. Never log the free-text query (it may contain customer terms); log its length only.
+**Logging.** Info: queue refreshed (count is the sum of items across sections, never summaries). Warn: label removal failure, list fetch failure. Debug: dropped stale queue or search results, ignored refreshQueue. Never log the free-text query (it may contain customer terms); log its length only.

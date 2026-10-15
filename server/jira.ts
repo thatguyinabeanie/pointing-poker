@@ -2,6 +2,7 @@ import type {
   JiraBoard,
   JiraProject,
   QueueItem,
+  QueueSection,
   QueueSettings,
   Ticket,
   TicketComment,
@@ -29,8 +30,8 @@ export interface JiraClient {
   setStoryPoints(key: string, points: number): Promise<Result<void>>;
   listProjects(): Promise<Result<JiraProject[]>>;
   listBoards(projectKey: string): Promise<Result<JiraBoard[]>>;
-  boardFilterId(boardId: number): Promise<Result<number>>;
-  searchQueue(settings: QueueSettings, label: string): Promise<Result<QueueItem[]>>;
+  boardType(boardId: number): Promise<Result<string>>;
+  searchQueue(settings: QueueSettings, label: string): Promise<Result<QueueSection[]>>;
   removeLabel(key: string, label: string): Promise<Result<void>>;
   searchTickets(projectKey: string | null, query: string): Promise<Result<QueueItem[]>>;
 }
@@ -55,6 +56,7 @@ const LIST_CACHE_MS = 10 * 60 * 1000;
 const MAX_PROJECTS = 500;
 const MAX_BOARDS = 500;
 const QUEUE_PAGE_SIZE = 50;
+const MAX_SPRINTS = 50;
 const SEARCH_PAGE_SIZE = 10;
 const MIN_QUERY_LENGTH = 2;
 const ISSUE_KEY = /^[A-Z][A-Z0-9]+-\d+$/i;
@@ -450,27 +452,34 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return { ok: true, value };
   }
 
-  async function boardFilterId(boardId: number): Promise<Result<number>> {
-    const cacheKey = `boardFilter:${boardId}`;
-    const cached = cacheGet<number>(cacheKey);
+  // The board type decides how the queue is sectioned: scrum boards have sprints, kanban
+  // boards do not. Cached like the other board lookups.
+  async function boardType(boardId: number): Promise<Result<string>> {
+    const cacheKey = `boardType:${boardId}`;
+    const cached = cacheGet<string>(cacheKey);
     if (cached !== null) return { ok: true, value: cached };
 
     const res = await request("GET", `/rest/agile/1.0/board/${boardId}/configuration`, undefined, {
-      notFoundMessage: `Jira board ${boardId} not found, or not visible to this account (404).`,
+      notFoundMessage: boardNotFound(boardId),
     });
     if (!res.ok) return res;
-    const config = parseJson(res.text) as { filter?: { id?: unknown } } | undefined;
-    // Jira returns the filter id as a string in this payload; accept either form.
-    const raw = config?.filter?.id;
-    const id = typeof raw === "string" ? Number(raw) : raw;
-    if (typeof id !== "number" || !Number.isInteger(id)) {
-      return fail("jira_error", "Jira returned a board configuration without a filter.");
-    }
-    cachePut(cacheKey, id);
-    return { ok: true, value: id };
+    const config = parseJson(res.text) as { type?: unknown } | undefined;
+    if (!config) return fail("jira_error", "Jira returned an unreadable board configuration.");
+    const value = typeof config.type === "string" ? config.type.toLowerCase() : "";
+    cachePut(cacheKey, value);
+    return { ok: true, value };
   }
 
-  async function searchQueue(settings: QueueSettings, label: string): Promise<Result<QueueItem[]>> {
+  function boardNotFound(boardId: number): string {
+    return `Jira board ${boardId} not found, or not visible to this account (404).`;
+  }
+
+  // Sections are `Result`s all the way down: the first failed section fails the refresh, so
+  // the queue is never partial.
+  async function searchQueue(
+    settings: QueueSettings,
+    label: string,
+  ): Promise<Result<QueueSection[]>> {
     if (settings.projectKey === null) return notConfigured();
 
     // Prefer the field id (cf[NNNNN]) when we know it: it is immune to renamed or duplicate
@@ -481,50 +490,162 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
 
     // A ticket needs pointing if it has the label OR has no Story Points. The switch narrows
     // that to labeled tickets only (pointed or not, so a labeled ticket can be re-pointed).
-    let jql = `project = ${jqlQuote(settings.projectKey)} AND statusCategory != Done`;
-    jql += settings.needsPointingOnly
-      ? ` AND labels = ${jqlQuote(label)}`
-      : ` AND (labels = ${jqlQuote(label)} OR ${pointsField} is EMPTY)`;
-    if (settings.boardId !== null) {
-      // A board is just a saved filter plus layout. Applying it through its filter id keeps
-      // one JQL path for every combination of settings, instead of a second agile-API
-      // endpoint (/board/{id}/issue) with different paging, ordering and field rules.
-      const filter = await boardFilterId(settings.boardId);
-      if (!filter.ok) return filter;
-      jql += ` AND filter = ${filter.value}`;
-    }
-    jql += " ORDER BY Rank ASC";
+    const clause = `statusCategory != Done AND ${
+      settings.needsPointingOnly
+        ? `labels = ${jqlQuote(label)}`
+        : `(labels = ${jqlQuote(label)} OR ${pointsField} is EMPTY)`
+    }`;
 
-    return runSearch(jql, QUEUE_PAGE_SIZE);
+    if (settings.boardId === null) {
+      const found = await searchIssues(
+        `project = ${jqlQuote(settings.projectKey)} AND ${clause} ORDER BY Rank ASC`,
+        QUEUE_PAGE_SIZE,
+      );
+      if (!found.ok) return found;
+      const { items, more } = found.value;
+      // /search/jql has no total, so only ask for a count when the page was full.
+      let total = items.length;
+      if (more) {
+        const counted = await approximateCount(
+          `project = ${jqlQuote(settings.projectKey)} AND ${clause}`,
+        );
+        if (counted.ok) total = Math.max(counted.value, items.length);
+      }
+      const all: QueueSection = { id: "all", name: "Tickets", kind: "all", total, items };
+      return { ok: true, value: total === 0 ? [] : [all] };
+    }
+
+    // With a board, the Agile API mirrors the board's backlog page: it applies the board's own
+    // filter and returns issues in rank order, per sprint and for the backlog. That needs one
+    // endpoint per section, so boards no longer share the single JQL search used above.
+    const boardId = settings.boardId;
+    const type = await boardType(boardId);
+    if (!type.ok) return type;
+
+    const sections = await (type.value === "scrum"
+      ? scrumSections(boardId, clause)
+      : otherSections(boardId, clause));
+    if (!sections.ok) return sections;
+    return { ok: true, value: sections.value.filter((section) => section.total > 0) };
   }
 
-  // /rest/api/3/search is deprecated; /search/jql pages with nextPageToken. One page is
-  // enough for a picker, so the token is ignored.
-  async function runSearch(jql: string, maxResults: number): Promise<Result<QueueItem[]>> {
-    const res = await request("POST", "/rest/api/3/search/jql", {
-      jql,
-      fields: ["summary", "issuetype", "status"],
-      maxResults,
-    });
-    if (!res.ok) return res;
+  async function scrumSections(boardId: number, clause: string): Promise<Result<QueueSection[]>> {
+    const sprints = await listOpenSprints(boardId);
+    if (!sprints.ok) return sprints;
+    // All sections load in parallel; Promise.all keeps the order of this array.
+    const results = await Promise.all([
+      ...sprints.value.map((sprint) =>
+        boardSection(
+          boardId,
+          `sprint/${sprint.id}/issue`,
+          clause,
+          `sprint-${sprint.id}`,
+          sprint.name,
+          sprint.kind,
+        ),
+      ),
+      boardSection(boardId, "backlog", clause, "backlog", "Backlog", "backlog"),
+    ]);
+    return collect(results);
+  }
 
-    const data = parseJson(res.text) as
-      | {
-          issues?: {
-            key?: unknown;
-            fields?: {
-              summary?: unknown;
-              issuetype?: { name?: unknown };
-              status?: { name?: unknown };
-            };
-          }[];
-        }
-      | undefined;
-    if (!data || !Array.isArray(data.issues)) {
-      return fail("jira_error", "Jira returned search results in an unexpected shape.");
+  async function otherSections(boardId: number, clause: string): Promise<Result<QueueSection[]>> {
+    const backlog = await boardSection(boardId, "backlog", clause, "backlog", "Backlog", "backlog");
+    if (backlog.ok) return { ok: true, value: [backlog.value] };
+    // A kanban board with its backlog disabled rejects /backlog; its issues are still readable.
+    const all = await boardSection(boardId, "issue", clause, "all", "Tickets", "all");
+    return all.ok ? { ok: true, value: [all.value] } : all;
+  }
+
+  function collect(results: Result<QueueSection>[]): Result<QueueSection[]> {
+    const value: QueueSection[] = [];
+    for (const r of results) {
+      if (!r.ok) return r;
+      value.push(r.value);
     }
+    return { ok: true, value };
+  }
+
+  async function listOpenSprints(
+    boardId: number,
+  ): Promise<Result<{ id: number; name: string; kind: "active" | "future" }[]>> {
+    const sprints: { id: number; name: string; kind: "active" | "future" }[] = [];
+    let startAt = 0;
+    while (sprints.length < MAX_SPRINTS) {
+      const res = await request(
+        "GET",
+        `/rest/agile/1.0/board/${boardId}/sprint?state=active,future&maxResults=50&startAt=${startAt}`,
+        undefined,
+        { notFoundMessage: boardNotFound(boardId) },
+      );
+      if (!res.ok) return res;
+      const page = parseJson(res.text) as
+        | { values?: { id?: unknown; name?: unknown; state?: unknown }[]; isLast?: unknown }
+        | undefined;
+      if (!page || !Array.isArray(page.values)) {
+        return fail("jira_error", "Jira returned an unreadable sprint list.");
+      }
+      for (const sp of page.values) {
+        if (typeof sp.id === "number" && typeof sp.name === "string") {
+          sprints.push({
+            id: sp.id,
+            name: sp.name,
+            kind: sp.state === "active" ? "active" : "future",
+          });
+        }
+      }
+      if (page.isLast === true || page.values.length === 0) break;
+      startAt += page.values.length;
+    }
+    // The API already lists sprints in page order; this only makes sure active ones lead.
+    const capped = sprints.slice(0, MAX_SPRINTS);
+    return {
+      ok: true,
+      value: [
+        ...capped.filter((x) => x.kind === "active"),
+        ...capped.filter((x) => x.kind === "future"),
+      ],
+    };
+  }
+
+  // One Agile API list (a sprint's issues, the backlog, or all board issues). Rank order is
+  // the endpoints' default, so no ORDER BY, and the board's own filter is already applied.
+  async function boardSection(
+    boardId: number,
+    endpoint: string,
+    clause: string,
+    id: string,
+    name: string,
+    kind: QueueSection["kind"],
+  ): Promise<Result<QueueSection>> {
+    const res = await request(
+      "GET",
+      `/rest/agile/1.0/board/${boardId}/${endpoint}?jql=${encodeURIComponent(clause)}&maxResults=${QUEUE_PAGE_SIZE}&fields=summary,issuetype,status`,
+      undefined,
+      { notFoundMessage: boardNotFound(boardId) },
+    );
+    if (!res.ok) return res;
+    const data = parseJson(res.text) as { issues?: unknown; total?: unknown } | undefined;
+    const items = data ? parseIssues(data.issues) : undefined;
+    if (!data || !items) {
+      return fail("jira_error", "Jira returned board issues in an unexpected shape.");
+    }
+    const total =
+      typeof data.total === "number" ? Math.max(data.total, items.length) : items.length;
+    return { ok: true, value: { id, name, kind, total, items } };
+  }
+
+  function parseIssues(issues: unknown): QueueItem[] | undefined {
+    if (!Array.isArray(issues)) return undefined;
     const items: QueueItem[] = [];
-    for (const issue of data.issues) {
+    for (const issue of issues as {
+      key?: unknown;
+      fields?: {
+        summary?: unknown;
+        issuetype?: { name?: unknown };
+        status?: { name?: unknown };
+      };
+    }[]) {
       if (typeof issue.key !== "string") continue;
       items.push({
         key: issue.key,
@@ -535,7 +656,43 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         url: `${baseUrl}/browse/${issue.key}`,
       });
     }
-    return { ok: true, value: items };
+    return items;
+  }
+
+  async function approximateCount(jql: string): Promise<Result<number>> {
+    const res = await request("POST", "/rest/api/3/search/approximate-count", { jql });
+    if (!res.ok) return res;
+    const data = parseJson(res.text) as { count?: unknown } | undefined;
+    if (typeof data?.count !== "number") {
+      return fail("jira_error", "Jira returned an unreadable ticket count.");
+    }
+    return { ok: true, value: data.count };
+  }
+
+  // /rest/api/3/search is deprecated; /search/jql pages with nextPageToken. One page is
+  // enough for a picker, so the token is ignored; `more` says whether a next page exists.
+  async function searchIssues(
+    jql: string,
+    maxResults: number,
+  ): Promise<Result<{ items: QueueItem[]; more: boolean }>> {
+    const res = await request("POST", "/rest/api/3/search/jql", {
+      jql,
+      fields: ["summary", "issuetype", "status"],
+      maxResults,
+    });
+    if (!res.ok) return res;
+
+    const data = parseJson(res.text) as { issues?: unknown; nextPageToken?: unknown } | undefined;
+    const items = data ? parseIssues(data.issues) : undefined;
+    if (!data || !items) {
+      return fail("jira_error", "Jira returned search results in an unexpected shape.");
+    }
+    return { ok: true, value: { items, more: typeof data.nextPageToken === "string" } };
+  }
+
+  async function runSearch(jql: string, maxResults: number): Promise<Result<QueueItem[]>> {
+    const found = await searchIssues(jql, maxResults);
+    return found.ok ? { ok: true, value: found.value.items } : found;
   }
 
   async function searchTickets(
@@ -578,7 +735,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     setStoryPoints,
     listProjects,
     listBoards,
-    boardFilterId,
+    boardType,
     searchQueue,
     removeLabel,
     searchTickets,

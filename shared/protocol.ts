@@ -65,8 +65,19 @@ export interface JiraBoard {
   name: string;
   type: string;
 }
-export interface QueueState {
+export type QueueSectionKind = "active" | "future" | "backlog" | "all";
+export interface QueueSection {
+  // "sprint-<sprintId>", "backlog", or "all"
+  id: string;
+  // Sprint name, "Backlog", or "Tickets" for the no-board list
+  name: string;
+  kind: QueueSectionKind;
+  // Matching tickets in Jira for this section; may exceed items.length (per-section cap 50)
+  total: number;
   items: QueueItem[];
+}
+export interface QueueState {
+  sections: QueueSection[];
   loading: boolean;
   error: string | null;
   fetchedAt: string | null;

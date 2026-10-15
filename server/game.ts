@@ -6,7 +6,7 @@ import type {
   JiraSave,
   Phase,
   PlayerView,
-  QueueItem,
+  QueueSection,
   QueueSettings,
   QueueState,
   Snapshot,
@@ -50,7 +50,7 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
       needsPointingOnly: true,
       clearLabelOnSave: true,
     },
-    queue: { items: [], loading: false, error: null, fetchedAt: null },
+    queue: { sections: [], loading: false, error: null, fetchedAt: null },
     projects: [],
     boards: [],
   };
@@ -187,18 +187,18 @@ export function setQueueLoading(state: GameState): Result {
   return ok({ ...state, queue: { ...state.queue, loading: true } });
 }
 
-// On error the previous items stay visible next to the message, so a transient Jira
+// On error the previous sections stay visible next to the message, so a transient Jira
 // failure does not blank the list; fetchedAt keeps the time of the last good fetch.
 export function setQueue(
   state: GameState,
-  result: { items: QueueItem[] } | { error: string },
+  result: { sections: QueueSection[] } | { error: string },
   fetchedAt: string,
 ): Result {
   // fetchedAt is a parameter because this module does no I/O, and reading the clock is I/O.
   const queue: QueueState =
     "error" in result
       ? { ...state.queue, loading: false, error: result.error }
-      : { items: result.items, loading: false, error: null, fetchedAt };
+      : { sections: result.sections, loading: false, error: null, fetchedAt };
   return ok({ ...state, queue });
 }
 

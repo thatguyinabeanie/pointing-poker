@@ -53,6 +53,7 @@ Numbers are stable references; new decisions are appended, never renumbered.
 29. **Repo is now public, and pre-PR history was squashed (10/15/2026).** This supersedes the private visibility in decision 24. Before the first PR the history was squashed so no internal names remain in any commit.
 30. **A ticket needs pointing if labeled or unpointed (10/15/2026).** The queue JQL is now `labels = X OR points is EMPTY`, and the "Labeled only" switch (still on by default, wire field `needsPointingOnly`) narrows it to labeled tickets so a pointed-but-labeled ticket can be re-pointed. This refines decision 15.
 31. **Optional default board by name or id (10/15/2026).** `JIRA_DEFAULT_BOARD` takes a board name or numeric id and is resolved against the default project's boards at bootstrap, before the first queue fetch. A missing, unknown or ambiguous value falls back to no board, with one warn log.
+32. **Queue mirrors the board's backlog page (10/15/2026).** With a board selected, the queue is read through the Agile API as sections: active sprints, then future sprints, then the backlog, each in rank order and capped at 50 tickets, with the board's own filter applied by Jira. The client shows the sections with collapsible headers; collapse state is per viewer (localStorage). Without a board the queue is one plain section. This replaces the single-JQL `filter = <id>` approach from decision 15 for boards.
 
 ## Where each decision is specified
 
