@@ -479,8 +479,12 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     const idMatch = field.ok ? /^customfield_(\d+)$/.exec(field.value) : null;
     const pointsField = idMatch ? `cf[${idMatch[1]}]` : '"Story Points"';
 
-    let jql = `project = ${jqlQuote(settings.projectKey)} AND statusCategory != Done AND ${pointsField} is EMPTY`;
-    if (settings.needsPointingOnly) jql += ` AND labels = ${jqlQuote(label)}`;
+    // A ticket needs pointing if it has the label OR has no Story Points. The switch narrows
+    // that to labeled tickets only (pointed or not, so a labeled ticket can be re-pointed).
+    let jql = `project = ${jqlQuote(settings.projectKey)} AND statusCategory != Done`;
+    jql += settings.needsPointingOnly
+      ? ` AND labels = ${jqlQuote(label)}`
+      : ` AND (labels = ${jqlQuote(label)} OR ${pointsField} is EMPTY)`;
     if (settings.boardId !== null) {
       // A board is just a saved filter plus layout. Applying it through its filter id keeps
       // one JQL path for every combination of settings, instead of a second agile-API

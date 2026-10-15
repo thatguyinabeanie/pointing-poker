@@ -199,6 +199,6 @@ Note: the tree above is the plan's layout. Test files and `vitest.config.ts` are
 | Snapshot | The full state object sent to one viewer in each `state` message. Built per viewer by `viewFor` |
 | Phase | `idle`, `voting`, or `revealed`. Votes are visible only in `revealed` |
 | Queue | The shared list of unpointed Jira tickets the picker shows: not Done, Story Points empty, first 50 by Rank. Each refresh runs a JQL search. Nothing is stored |
-| needs-pointing label | The Jira label that marks a ticket as waiting for points. The queue filters on it when the switch is on. Save removes it when Clear label on save is on. No ticket has it yet, so the team must start adding it |
+| needs-pointing label | The Jira label that marks a ticket as waiting for points. A ticket needs pointing if it has this label or has no Story Points; the queue shows labeled tickets only when the "Labeled only" switch is on. Save removes it when Clear label on save is on. No ticket has it yet, so the team must start adding it |
 | Board filter | The filter behind a Jira board, read from the board's configuration. With a board selected, the queue JQL adds `filter = <id>` so it matches that board's scope. With no board, the search covers the whole project |
 | Sanitized HTML | Jira's rendered HTML for a ticket's description and comments. `server/sanitize.ts` strips unsafe tags and attributes with `sanitize-html`, and replaces attachment images with links, before the ticket reaches the browser |

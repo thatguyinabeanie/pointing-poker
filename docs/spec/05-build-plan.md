@@ -98,8 +98,9 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
     (`GET /rest/agile/1.0/board/{id}/configuration`), the queue search (`POST /rest/api/3/search/jql`,
     first 50), label removal (`PUT /rest/api/3/issue/{key}` with `update.labels remove`), and the ticket search
     (`POST /rest/api/3/search/jql`, exact key match or `text ~ "query*"`, top 10).
-  - Queue JQL: `project = X AND statusCategory != Done AND "Story Points" is EMPTY`, plus
-    `AND labels = needs-pointing` when the switch is on, plus `AND filter = <board filter id>` when a
+  - Queue JQL: `project = X AND statusCategory != Done`, plus
+    `AND labels = needs-pointing` when the switch is on (labeled only), or
+    `AND (labels = needs-pointing OR "Story Points" is EMPTY)` when it is off, plus `AND filter = <board filter id>` when a
     board is set, then `ORDER BY Rank ASC`.
   - `server/game.ts` stores the queue settings, the boards, the projects, and the queue. It stays
     pure: `ws.ts` fetches the data and hands it in.
@@ -211,7 +212,7 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
   - [ ] Queue checks (two players, real Jira):
     - [ ] Alice and Bob see the same queue, in the same order.
     - [ ] Changing the project reloads the board list and the queue.
-    - [ ] Turning the needs-pointing switch on or off changes the queue list.
+    - [ ] Turning the "Labeled only" switch off widens the queue to labeled or unpointed tickets; on narrows it to labeled tickets.
     - [ ] Picking a ticket from the queue loads it for both windows.
     - [ ] Saving removes the ticket from the queue, and removes the `needs-pointing` label from
           the ticket in Jira.
@@ -321,7 +322,7 @@ Taken from the planning document's step 0 assumptions and its Jira notes.
 | Story Points field lookup | The field name may differ or be missing | `JIRA_STORY_POINTS_FIELD` overrides the lookup. The plan says Story Points exists in the team's main project |
 | Dev identity override | `?devUser=` must never work in production | Gated on `NODE_ENV` and `ALLOW_DEV_USER`. The Docker image sets `NODE_ENV=production` |
 | Jira token for boards and labels | The queue reads projects and boards through the Agile API, and removes labels through the issue API. The token needs browse on projects and boards, and edit on issues (labels and Story Points) | Board calls fail with 401 or 403: the board list stays empty, and the project-only queue still works. Label removal fails: Story Points is still saved, but the ticket stays in the queue until someone removes the label |
-| Label adoption | No ticket has `needs-pointing` yet. With the switch on, the queue is empty. The team's main project has thousands of open unpointed tickets today | The team adds the label to the tickets it wants in the queue, or turns the switch off and scopes by board. Decide before launch |
+| Label adoption | No ticket has `needs-pointing` yet. With the switch on (labeled only), the queue is empty. The team's main project has thousands of open unpointed tickets today | The team adds the label to the tickets it wants in the queue, or turns the switch off and scopes by board. Decide before launch |
 
 ## Resolved questions
 

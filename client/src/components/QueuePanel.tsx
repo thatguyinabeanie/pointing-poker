@@ -162,7 +162,14 @@ export function QueuePanel({
             </Select>
           </FormControl>
           <FormControlLabel
-            label="Needs pointing only"
+            label={
+              <>
+                Labeled only
+                <Typography variant="caption" color="text.secondary" component="div">
+                  Off: labeled or unpointed tickets
+                </Typography>
+              </>
+            }
             control={
               <Switch
                 checked={settings.needsPointingOnly}
@@ -224,7 +231,7 @@ export function QueuePanel({
 
         {!queue.loading && !queue.error && queue.items.length === 0 ? (
           <Typography color="text.secondary">
-            No unpointed tickets match. Add the needs-pointing label in Jira or change the filters.
+            No tickets need pointing. Add the needs-pointing label in Jira or change the filters.
           </Typography>
         ) : (
           <TicketRows
