@@ -27,7 +27,6 @@ them, idle sockets can be cut at the default limits.
 | `LOG_LEVEL`               | Defaults to `info`. Set to `debug` for more detail in the logs.                                                |
 | `JIRA_DEFAULT_PROJECT`    | No default. Seeds the queue's Jira project.                                                                    |
 | `JIRA_DEFAULT_BOARD`      | No default. A board name or numeric id (the number in `.../boards/123`) to start on. Needs `JIRA_DEFAULT_PROJECT`. An unknown or ambiguous name falls back to no board; use the id if two boards share a name. |
-| `JIRA_NEEDS_POINTING_LABEL` | Defaults to `needs-pointing`. The queue uses this label (labeled or unpointed tickets need pointing), and it is removed after a save.               |
 | `ALLOWED_ORIGINS`         | Not needed unless the WebSocket Origin check fails behind the auth proxy. See "Verifying a deployment."        |
 
 Leave `ALLOW_DEV_USER`, `DEV_USER_ID`, and `DEV_USERNAME` unset in production. The image sets

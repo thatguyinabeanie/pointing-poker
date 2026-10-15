@@ -10,7 +10,6 @@ JIRA_API_TOKEN_PASSWORD=
 JIRA_DEFAULT_PROJECT=
 # Optional: board name or numeric id (the number in .../boards/123); needs JIRA_DEFAULT_PROJECT
 JIRA_DEFAULT_BOARD=
-JIRA_NEEDS_POINTING_LABEL=
 # Optional: skip Story Points field discovery
 JIRA_STORY_POINTS_FIELD=
 

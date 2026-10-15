@@ -11,12 +11,12 @@ Pointing Poker is a small, self-hosted estimation app that runs as a service on 
 platform. A team member picks a Jira ticket from a shared queue of unpointed tickets, or types a
 key as a fallback. Everyone picks a card from a Fibonacci-style deck in private, the team reveals
 the votes together, and the agreed number is saved to the ticket's Story Points field in Jira.
-After a save, the app removes the `needs-pointing` label (if that switch is on) and refreshes the
-queue. A search box in the same panel finds tickets by key or by text, and each person's search
+After a save, the app refreshes the
+queue, so the newly pointed ticket drops out of it. A search box in the same panel finds tickets by key or by text, and each person's search
 results stay their own. Each deployed instance is one shared room, and its queue settings are
 shared too. There is
 no database, and identity comes from the headers the platform's auth proxy adds to each request.
-The app never edits ticket text, only Story Points and the `needs-pointing` label.
+The app never edits ticket text or labels, only Story Points.
 The page uses the full width in LAYOUT C: three top panes side by side. LEFT (25%) holds the queue
 and search. CENTER (42%) holds the selected ticket's description: key, summary, meta chips, and the
 Jira-rendered description. RIGHT (33%) holds the comments, oldest first. A one-row sticky bottom bar
@@ -54,7 +54,7 @@ the server before it reaches the browser.
 | `mocks/pointing-poker.html` | Browser mock of the UI (LAYOUT C, house style: Navy #215470, Amber #F1A137, Lato, light-only). Also published at https://claude.ai/artifact/TetbLQJUp7WmNTB3m4TfTh |
 | `reference/shared/protocol.ts` | Wire types shared by client and server |
 | `reference/shared/deck.ts` | `DECK` and `isNumericCard` |
-| `reference/shared/constants.ts` | `NEEDS_POINTING_LABEL` (types-only protocol.ts cannot hold runtime constants) |
+| `reference/shared/constants.ts` | Runtime constants (types-only protocol.ts cannot hold them). The reference copy still has `NEEDS_POINTING_LABEL`, which was removed from the repo on 10/15/2026 (decision 34) |
 | `reference/server/game.ts` | Pure game state machine |
 | `reference/server/jira.ts` | Jira REST client |
 | `reference/server/sanitize.ts` | Cleans Jira HTML with `sanitize-html` and replaces attachment images with links |

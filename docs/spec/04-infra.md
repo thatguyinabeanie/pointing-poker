@@ -278,7 +278,6 @@ Set these on the platform service. The first rows come from the draft `docs/spec
 | `JIRA_STORY_POINTS_FIELD` | Optional | Unset: found through the Jira field list. |
 | `LOG_LEVEL` | Optional, default `info` | `debug` for more detail. |
 | `JIRA_DEFAULT_PROJECT` | Optional, no default | Seeds the queue's project. |
-| `JIRA_NEEDS_POINTING_LABEL` | Optional, default `needs-pointing` | Queue filter, and the label removed after a save. |
 | `ALLOWED_ORIGINS` | Optional | Only if the WebSocket Origin check fails behind the auth proxy. |
 | `IDENTITY_USER_ID_HEADER`, `IDENTITY_USERNAME_HEADER` | Set to the header names the auth proxy injects | No defaults in the repo. Unset in production means unauthenticated: `/ws` closes with 4401. |
 
@@ -306,7 +305,7 @@ Spike run, October 15, 2026, commit `5665462`. `npm run lint`, `npm run tsc:chec
 
 - Real-browser HMR check is owed. V3 was checked headlessly.
 - Optional: drop `vite` from the runtime image (about 20MB, and a required peer today). Not done.
-- `.env.example` does not exist in the repo (inference). It is not in `git ls-files`, `git status --untracked-files=all` is clean, and `.gitignore` un-ignores it, so an untracked copy would show. A direct read was blocked by policy, so its contents are unchecked. When created it holds names only, and it should list `ALLOWED_ORIGINS`, `JIRA_DEFAULT_PROJECT` and `JIRA_NEEDS_POINTING_LABEL`, which the `docs/spec/drafts/deploy.md` TODO and the plan's list omit.
+- `.env.example` does not exist in the repo (inference). It is not in `git ls-files`, `git status --untracked-files=all` is clean, and `.gitignore` un-ignores it, so an untracked copy would show. A direct read was blocked by policy, so its contents are unchecked. When created it holds names only, and it should list `ALLOWED_ORIGINS` and `JIRA_DEFAULT_PROJECT`, which the `docs/spec/drafts/deploy.md` TODO and the plan's list omit.
 - `docs/deploy.md` does not exist yet; its draft is `docs/spec/drafts/deploy.md`. The repo has only a stub `README.md`.
 - Dockerfile line 17 says `"22"`; it should read `26`.- `zod` and `@types/ws` are declared but not imported yet.
 - The stale `'../dist/client'` and `server.hmr.port` mentions in `01-overview.md` and `05-build-plan.md` were patched when the spec bundle was assembled.

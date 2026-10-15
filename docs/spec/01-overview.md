@@ -20,14 +20,14 @@ no observers, no room codes. Jira write-back (Story Points) is in v1.
 - Game state lives in process memory. `server/game.ts` is a pure state machine with no I/O.
   `server/ws.ts` wires it to sockets. Each viewer gets their own snapshot (`viewFor`), so hidden
   votes stay hidden until reveal.
-- The ticket queue is a live Jira search, not a database. Queue settings (project, board, the
-  needs-pointing switch, the clear-label switch) are shared room state, held in memory with the
+- The ticket queue is a live Jira search, not a database. Queue settings (project and board) are
+  shared room state, held in memory with the
   rest of the game. The server runs the search when settings change, when someone refreshes, and
   after each save, then sends the same list to every viewer. The search box sends a separate
   `searchTickets {query}` command. It matches an exact key, or runs `text ~ "query*"`, and returns
   the top 10. The result goes back only to the viewer who searched, as `searchResults`.
 - Only `server/jira.ts` talks to Jira. It reads a ticket, lists projects and boards, runs the queue
-  search, writes Story Points, and removes the `needs-pointing` label, all with the same
+  search, and writes Story Points, all with the same
   credential. The browser never sees the token.
 - The loaded ticket carries its full description and all comments (capped at 50, oldest first) as
   Jira-rendered HTML, plus assignee, priority, and labels. `server/sanitize.ts` cleans that HTML with
@@ -104,8 +104,6 @@ sequenceDiagram
   S->>A: state (jiraSave saving)
   S->>J: PUT Story Points field
   J-->>S: 204
-  S->>J: PUT labels remove needs-pointing (if Clear label on save is on)
-  J-->>S: 204
   S->>J: POST search/jql (refresh queue)
   J-->>S: first 50 unpointed tickets
   S->>A: state (jiraSave saved, queue refreshed)
@@ -149,7 +147,7 @@ pointing-poker/
         Layout.tsx            LAYOUT C: three top panes (25/42/33) and the one-row sticky bottom bar
         TicketDescription.tsx Display only: key, summary, meta chips, description (sanitized HTML)
         TicketComments.tsx    Display only: comments, oldest first (sanitized HTML)
-        QueuePanel.tsx        Project and board selects, needs-pointing and clear-label switches, queue list, search box, manual key entry (collapsed fallback)
+        QueuePanel.tsx        Project and board selects, queue list, search box, manual key entry (collapsed fallback)
         ParticipantChips.tsx  Chips with vote status (icon before reveal, value after), offline dimmed
         Deck.tsx              row of Buttons, aria-pressed, click selected card = clear vote
         ActionBar.tsx         Reveal | Reset/Next ticket | Story points Select + Save to Jira | stats
@@ -199,6 +197,6 @@ Note: the tree above is the plan's layout. Test files and `vitest.config.ts` are
 | Snapshot | The full state object sent to one viewer in each `state` message. Built per viewer by `viewFor` |
 | Phase | `idle`, `voting`, or `revealed`. Votes are visible only in `revealed` |
 | Queue | The shared list of unpointed Jira tickets the picker shows: not Done, Story Points empty, first 50 by Rank. Each refresh runs a JQL search. Nothing is stored |
-| needs-pointing label | The Jira label that marks a ticket as waiting for points. A ticket needs pointing if it has this label or has no Story Points; the queue shows labeled tickets only when the "Labeled only" switch is on. Save removes it when Clear label on save is on. No ticket has it yet, so the team must start adding it |
+| Needs pointing | A ticket needs pointing when its status is not in Jira's Done category and its Story Points field is empty. Labels play no part (decision 34) |
 | Board filter | The filter behind a Jira board, read from the board's configuration. With a board selected, the queue JQL adds `filter = <id>` so it matches that board's scope. With no board, the search covers the whole project |
 | Sanitized HTML | Jira's rendered HTML for a ticket's description and comments. `server/sanitize.ts` strips unsafe tags and attributes with `sanitize-html`, and replaces attachment images with links, before the ticket reaches the browser |
