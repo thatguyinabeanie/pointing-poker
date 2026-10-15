@@ -1,5 +1,6 @@
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
+import { useCallback } from "react";
 
 interface Props {
   deck: readonly string[];
@@ -19,22 +20,43 @@ export function Deck({ deck, selected, disabled, onSelect, onClear }: Props) {
       role="group"
       aria-label="Voting cards"
     >
-      {deck.map((card) => {
-        const isSelected = card === selected;
-        return (
-          <Button
-            key={card}
-            variant={isSelected ? "contained" : "outlined"}
-            aria-pressed={isSelected}
-            disabled={disabled}
-            // Toggle semantics match the server: voting the same card again clears it.
-            onClick={() => (isSelected ? onClear() : onSelect(card))}
-            sx={{ minWidth: 48, height: 64, fontSize: 20 }}
-          >
-            {card}
-          </Button>
-        );
-      })}
+      {deck.map((card) => (
+        <DeckCard
+          key={card}
+          card={card}
+          isSelected={card === selected}
+          disabled={disabled}
+          onSelect={onSelect}
+          onClear={onClear}
+        />
+      ))}
     </Stack>
+  );
+}
+
+interface CardProps {
+  card: string;
+  isSelected: boolean;
+  disabled: boolean;
+  onSelect: (card: string) => void;
+  onClear: () => void;
+}
+
+function DeckCard({ card, isSelected, disabled, onSelect, onClear }: CardProps) {
+  // Toggle semantics match the server: voting the same card again clears it.
+  const onClick = useCallback(() => {
+    if (isSelected) onClear();
+    else onSelect(card);
+  }, [isSelected, onClear, onSelect, card]);
+  return (
+    <Button
+      variant={isSelected ? "contained" : "outlined"}
+      aria-pressed={isSelected}
+      disabled={disabled}
+      onClick={onClick}
+      sx={{ minWidth: 48, height: 64, fontSize: 20 }}
+    >
+      {card}
+    </Button>
   );
 }

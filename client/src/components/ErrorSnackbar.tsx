@@ -1,6 +1,6 @@
 import Alert from "@mui/material/Alert";
 import Snackbar from "@mui/material/Snackbar";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 interface Props {
   error: { id: number; message: string } | null;
@@ -15,17 +15,16 @@ export function ErrorSnackbar({ error }: Props) {
     setOpen(error !== null);
   }, [error?.id]);
 
+  const close = useCallback(() => setOpen(false), []);
+  const onClose = useCallback((_: unknown, reason?: string) => {
+    // A stray click elsewhere shouldn't swallow an error the user hasn't read.
+    if (reason === "clickaway") return;
+    setOpen(false);
+  }, []);
+
   return (
-    <Snackbar
-      open={open}
-      autoHideDuration={6000}
-      onClose={(_, reason) => {
-        // A stray click elsewhere shouldn't swallow an error the user hasn't read.
-        if (reason === "clickaway") return;
-        setOpen(false);
-      }}
-    >
-      <Alert severity="error" variant="filled" onClose={() => setOpen(false)}>
+    <Snackbar open={open} autoHideDuration={6000} onClose={onClose}>
+      <Alert severity="error" variant="filled" onClose={close}>
         {error?.message}
       </Alert>
     </Snackbar>

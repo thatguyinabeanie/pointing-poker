@@ -6,7 +6,7 @@ import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { isNumericCard } from "../../../shared/deck.ts";
 import type { JiraSave, Phase, Snapshot, Ticket } from "../../../shared/protocol.ts";
 import { suggestPoints } from "../lib/estimate.ts";
@@ -53,12 +53,18 @@ export function ActionBar({
   const canSave = phase === "revealed" && ticket !== null && points !== "" && !saving;
   const numericDeck = deck.filter(isNumericCard);
 
+  const onResetClick = useCallback(
+    () => onReset({ clearTicket: phase === "revealed" }),
+    [onReset, phase],
+  );
+  const onPointsChange = useCallback(
+    (e: { target: { value: string } }) => setPoints(e.target.value),
+    [],
+  );
+  const onSaveClick = useCallback(() => onSave(Number(points)), [onSave, points]);
+
   const resetButton = (
-    <Button
-      variant="outlined"
-      disabled={disabled}
-      onClick={() => onReset({ clearTicket: phase === "revealed" })}
-    >
+    <Button variant="outlined" disabled={disabled} onClick={onResetClick}>
       {RESET_LABEL[phase]}
     </Button>
   );
@@ -76,12 +82,7 @@ export function ActionBar({
         <>
           <FormControl size="small" sx={{ minWidth: 140 }} disabled={disabled}>
             <InputLabel id={labelId}>Story points</InputLabel>
-            <Select
-              labelId={labelId}
-              label="Story points"
-              value={points}
-              onChange={(e) => setPoints(e.target.value)}
-            >
+            <Select labelId={labelId} label="Story points" value={points} onChange={onPointsChange}>
               {numericDeck.map((card) => (
                 <MenuItem key={card} value={card}>
                   {card}
@@ -92,7 +93,7 @@ export function ActionBar({
           <Button
             variant="contained"
             disabled={disabled || !canSave}
-            onClick={() => onSave(Number(points))}
+            onClick={onSaveClick}
             startIcon={saving ? <CircularProgress size={16} /> : undefined}
           >
             Save to Jira

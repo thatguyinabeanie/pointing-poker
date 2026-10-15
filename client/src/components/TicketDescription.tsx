@@ -61,7 +61,7 @@ export function TicketDescription({ ticket }: Props) {
         <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: "wrap" }}>
           <Chip size="small" label={ticket.issueType} />
           <Chip size="small" label={ticket.status} />
-          {ticket.priority && <Chip size="small" label={ticket.priority} />}
+          {ticket.priority ? <Chip size="small" label={ticket.priority} /> : null}
           <Chip size="small" label={ticket.assignee ?? "Unassigned"} />
           <Chip size="small" label={`Current: ${ticket.currentPoints ?? "unset"} pts`} />
           {ticket.labels.map((label) => (

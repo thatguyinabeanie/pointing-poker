@@ -15,12 +15,12 @@ import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
-import Select from "@mui/material/Select";
+import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { useId, useState } from "react";
+import { type ChangeEvent, type ReactNode, useCallback, useId, useState } from "react";
 import type {
   JiraBoard,
   JiraProject,
@@ -73,6 +73,50 @@ export function QueuePanel({
     : "";
   const boardValue = boards.some((b) => b.id === settings.boardId) ? (settings.boardId ?? "") : "";
 
+  const onProjectChange = useCallback(
+    (e: SelectChangeEvent<string>) => onChangeSettings({ projectKey: e.target.value || null }),
+    [onChangeSettings],
+  );
+  const onBoardChange = useCallback(
+    (e: SelectChangeEvent<number | "">) =>
+      onChangeSettings({ boardId: e.target.value === "" ? null : e.target.value }),
+    [onChangeSettings],
+  );
+  const onNeedsPointingChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => onChangeSettings({ needsPointingOnly: e.target.checked }),
+    [onChangeSettings],
+  );
+  const onClearLabelChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => onChangeSettings({ clearLabelOnSave: e.target.checked }),
+    [onChangeSettings],
+  );
+  const onQueryChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setQuery(e.target.value);
+      onSearch(e.target.value);
+    },
+    [onSearch],
+  );
+
+  // Search results area, resolved up front so the JSX has no leaked-render conditions.
+  let searchBody: ReactNode = null;
+  if (searchResults && !searchResults.pending) {
+    if (searchResults.error) {
+      searchBody = <Alert severity="warning">{searchResults.error}</Alert>;
+    } else if (searchResults.items.length === 0) {
+      searchBody = <Typography color="text.secondary">No matches</Typography>;
+    } else {
+      searchBody = (
+        <TicketRows
+          items={searchResults.items}
+          currentKey={currentKey}
+          disabled={disabled}
+          onPick={onPick}
+        />
+      );
+    }
+  }
+
   return (
     <Paper sx={{ p: 2 }}>
       <Stack spacing={2}>
@@ -88,7 +132,7 @@ export function QueuePanel({
               labelId={projectLabelId}
               label="Project"
               value={projectValue}
-              onChange={(e) => onChangeSettings({ projectKey: e.target.value || null })}
+              onChange={onProjectChange}
             >
               {projects.map((p) => (
                 <MenuItem key={p.key} value={p.key}>
@@ -107,9 +151,7 @@ export function QueuePanel({
               labelId={boardLabelId}
               label="Board"
               value={boardValue}
-              onChange={(e) =>
-                onChangeSettings({ boardId: e.target.value === "" ? null : e.target.value })
-              }
+              onChange={onBoardChange}
             >
               <MenuItem value="">All (no board)</MenuItem>
               {boards.map((b) => (
@@ -125,7 +167,7 @@ export function QueuePanel({
               <Switch
                 checked={settings.needsPointingOnly}
                 disabled={disabled}
-                onChange={(e) => onChangeSettings({ needsPointingOnly: e.target.checked })}
+                onChange={onNeedsPointingChange}
               />
             }
           />
@@ -135,7 +177,7 @@ export function QueuePanel({
               <Switch
                 checked={settings.clearLabelOnSave}
                 disabled={disabled}
-                onChange={(e) => onChangeSettings({ clearLabelOnSave: e.target.checked })}
+                onChange={onClearLabelChange}
               />
             }
           />
@@ -154,10 +196,7 @@ export function QueuePanel({
             size="small"
             value={query}
             disabled={disabled}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              onSearch(e.target.value);
-            }}
+            onChange={onQueryChange}
             slotProps={{
               input: {
                 startAdornment: (
@@ -168,23 +207,8 @@ export function QueuePanel({
               },
             }}
           />
-          {searchResults?.pending && <LinearProgress aria-label="Searching" />}
-          {searchResults && !searchResults.pending && searchResults.error && (
-            <Alert severity="warning">{searchResults.error}</Alert>
-          )}
-          {searchResults &&
-            !searchResults.pending &&
-            !searchResults.error &&
-            (searchResults.items.length === 0 ? (
-              <Typography color="text.secondary">No matches</Typography>
-            ) : (
-              <TicketRows
-                items={searchResults.items}
-                currentKey={currentKey}
-                disabled={disabled}
-                onPick={onPick}
-              />
-            ))}
+          {searchResults?.pending ? <LinearProgress aria-label="Searching" /> : null}
+          {searchBody}
         </Stack>
 
         {queue.loading ? (
@@ -226,51 +250,62 @@ interface RowsProps {
 function TicketRows({ items, currentKey, disabled, onPick }: RowsProps) {
   return (
     <List dense disablePadding>
-      {items.map((item) => {
-        const isCurrent = item.key === currentKey;
-        return (
-          <ListItem
-            key={item.key}
-            divider
-            sx={{ bgcolor: isCurrent ? "action.selected" : undefined }}
-            secondaryAction={
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={disabled || isCurrent}
-                onClick={() => onPick(item.key)}
-              >
-                {isCurrent ? "Current" : "Point this"}
-              </Button>
-            }
-          >
-            <ListItemText
-              sx={{ pr: 12 }}
-              primary={
-                <>
-                  <Link href={item.url} target="_blank" rel="noopener noreferrer" sx={{ mr: 1 }}>
-                    {item.key}
-                  </Link>
-                  {item.summary}
-                </>
-              }
-              secondary={
-                <Stack
-                  component="span"
-                  direction="row"
-                  useFlexGap
-                  spacing={1}
-                  sx={{ mt: 0.5, flexWrap: "wrap" }}
-                >
-                  <Chip size="small" label={item.issueType} />
-                  <Chip size="small" label={item.status} />
-                </Stack>
-              }
-              slotProps={{ secondary: { component: "span" } }}
-            />
-          </ListItem>
-        );
-      })}
+      {items.map((item) => (
+        <TicketRow
+          key={item.key}
+          item={item}
+          isCurrent={item.key === currentKey}
+          disabled={disabled}
+          onPick={onPick}
+        />
+      ))}
     </List>
+  );
+}
+
+interface RowProps {
+  item: QueueItem;
+  isCurrent: boolean;
+  disabled: boolean;
+  onPick: (key: string) => void;
+}
+
+function TicketRow({ item, isCurrent, disabled, onPick }: RowProps) {
+  const onClick = useCallback(() => onPick(item.key), [onPick, item.key]);
+  return (
+    <ListItem
+      divider
+      sx={{ bgcolor: isCurrent ? "action.selected" : undefined }}
+      secondaryAction={
+        <Button size="small" variant="outlined" disabled={disabled || isCurrent} onClick={onClick}>
+          {isCurrent ? "Current" : "Point this"}
+        </Button>
+      }
+    >
+      <ListItemText
+        sx={{ pr: 12 }}
+        primary={
+          <>
+            <Link href={item.url} target="_blank" rel="noopener noreferrer" sx={{ mr: 1 }}>
+              {item.key}
+            </Link>
+            {item.summary}
+          </>
+        }
+        secondary={
+          <Stack
+            component="span"
+            direction="row"
+            useFlexGap
+            spacing={1}
+            sx={{ mt: 0.5, flexWrap: "wrap" }}
+          >
+            <Chip size="small" label={item.issueType} />
+            <Chip size="small" label={item.status} />
+          </Stack>
+        }
+        slotProps={{ secondary: { component: "span" } }}
+      />
+    </ListItem>
   );
 }

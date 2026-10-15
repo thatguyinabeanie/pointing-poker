@@ -20,9 +20,9 @@ export function TopBar({ connected, meName }: Props) {
           color={connected ? "success" : "warning"}
           size="small"
         />
-        {meName && (
+        {meName ? (
           <Typography sx={{ display: { xs: "none", sm: "block" } }}>You are {meName}</Typography>
-        )}
+        ) : null}
       </Toolbar>
     </AppBar>
   );

@@ -51,7 +51,7 @@ export function ParticipantChips({ players, phase, meId, stats }: Props) {
           );
         })}
       </Stack>
-      {revealed && stats && (
+      {revealed && stats ? (
         <Stack
           direction="row"
           useFlexGap
@@ -69,7 +69,7 @@ export function ParticipantChips({ players, phase, meId, stats }: Props) {
             label={stats.consensus ? "Consensus" : "No consensus"}
           />
         </Stack>
-      )}
+      ) : null}
     </Stack>
   );
 }
