@@ -110,6 +110,16 @@ function jqlQuote(value: string): string {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+// `text ~` is parsed as Lucene, so a query like "foo(bar)" or "a:b" made Jira answer 400.
+// Jira's analyzer splits words on these characters anyway, so spaces find the same tickets
+// and avoid depending on Jira's own escape rules.
+function luceneSafe(value: string): string {
+  return value
+    .replace(/[+\-&|!(){}[\]^~*?\\:"/]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 interface RawComment {
   id?: unknown;
   author?: { displayName?: unknown } | null;
@@ -706,10 +716,21 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     }
     // An exact key is looked up directly (in any project); anything else is a prefix text
     // search, scoped to the room's project when one is set.
-    const match = ISSUE_KEY.test(q)
-      ? `key = ${jqlQuote(q.toUpperCase())}`
-      : `${projectKey === null ? "" : `project = ${jqlQuote(projectKey)} AND `}text ~ ${jqlQuote(`${q}*`)}`;
-    return runSearch(`${match} AND statusCategory != Done ORDER BY updated DESC`, SEARCH_PAGE_SIZE);
+    if (ISSUE_KEY.test(q)) {
+      return runSearch(
+        `key = ${jqlQuote(q.toUpperCase())} AND statusCategory != Done ORDER BY updated DESC`,
+        SEARCH_PAGE_SIZE,
+      );
+    }
+    const text = luceneSafe(q);
+    if (text.length < MIN_QUERY_LENGTH) {
+      return fail("query_too_short", `Type at least ${MIN_QUERY_LENGTH} characters to search.`);
+    }
+    const scope = projectKey === null ? "" : `project = ${jqlQuote(projectKey)} AND `;
+    return runSearch(
+      `${scope}text ~ ${jqlQuote(`${text}*`)} AND statusCategory != Done ORDER BY updated DESC`,
+      SEARCH_PAGE_SIZE,
+    );
   }
 
   async function removeLabel(key: string, label: string): Promise<Result<void>> {
