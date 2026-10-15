@@ -1,8 +1,12 @@
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
+import ButtonBase from "@mui/material/ButtonBase";
 import Chip from "@mui/material/Chip";
+import Collapse from "@mui/material/Collapse";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
@@ -20,11 +24,12 @@ import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { type ChangeEvent, type ReactNode, useCallback, useId, useState } from "react";
+import { type ChangeEvent, type ReactNode, useCallback, useId, useMemo, useState } from "react";
 import type {
   JiraBoard,
   JiraProject,
   QueueItem,
+  QueueSection,
   QueueSettings,
   QueueState,
 } from "../../../shared/protocol.ts";
@@ -34,6 +39,27 @@ export interface SearchResults {
   items: QueueItem[];
   error: string | null;
   pending: boolean;
+}
+
+const COLLAPSED_KEY = "pp.queue.collapsed";
+
+// Collapse state is a per-viewer convenience, so storage failures are ignored.
+function readCollapsed(): string[] {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_KEY);
+    const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCollapsed(ids: string[]): void {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(ids));
+  } catch {
+    // Storage can be blocked or full; the in-memory state still works.
+  }
 }
 
 interface Props {
@@ -66,6 +92,31 @@ export function QueuePanel({
   const projectLabelId = useId();
   const boardLabelId = useId();
   const [query, setQuery] = useState("");
+  const [collapsed, setCollapsed] = useState<string[]>(readCollapsed);
+
+  const onToggleSection = useCallback((id: string) => {
+    setCollapsed((prev) => {
+      const next = prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id];
+      writeCollapsed(next);
+      return next;
+    });
+  }, []);
+
+  const totalTickets = queue.sections.reduce((sum, section) => sum + section.total, 0);
+  // The Jira base URL is only known from ticket links, so derive the origin from the first one.
+  const jiraBase = useMemo(() => {
+    const first = queue.sections.find((section) => section.items.length > 0)?.items[0];
+    if (!first) return null;
+    try {
+      return new URL(first.url).origin;
+    } catch {
+      return null;
+    }
+  }, [queue.sections]);
+  const boardUrl =
+    jiraBase !== null && settings.projectKey !== null && settings.boardId !== null
+      ? `${jiraBase}/jira/software/c/projects/${encodeURIComponent(settings.projectKey)}/boards/${settings.boardId}/backlog`
+      : null;
 
   // Show the stored selection only if it is a real option; MUI warns on unknown values.
   const projectValue = projects.some((p) => p.key === settings.projectKey)
@@ -224,25 +275,107 @@ export function QueuePanel({
           <Alert severity="warning">{queue.error}</Alert>
         ) : (
           <Typography variant="caption" color="text.secondary">
-            {queue.items.length} tickets
+            {totalTickets} tickets
             {queue.fetchedAt ? ` · updated ${new Date(queue.fetchedAt).toLocaleTimeString()}` : ""}
           </Typography>
         )}
 
-        {!queue.loading && !queue.error && queue.items.length === 0 ? (
+        {!queue.loading && !queue.error && totalTickets === 0 ? (
           <Typography color="text.secondary">
             No tickets need pointing. Add the needs-pointing label in Jira or change the filters.
           </Typography>
         ) : (
-          <TicketRows
-            items={queue.items}
-            currentKey={currentKey}
-            disabled={disabled}
-            onPick={onPick}
-          />
+          <Stack spacing={1}>
+            {queue.sections.map((section) => (
+              <QueueSectionBlock
+                key={section.id}
+                section={section}
+                isCollapsed={collapsed.includes(section.id)}
+                boardUrl={boardUrl}
+                currentKey={currentKey}
+                disabled={disabled}
+                onToggle={onToggleSection}
+                onPick={onPick}
+              />
+            ))}
+          </Stack>
         )}
       </Stack>
     </Paper>
+  );
+}
+
+interface SectionProps {
+  section: QueueSection;
+  isCollapsed: boolean;
+  boardUrl: string | null;
+  currentKey: string | null;
+  disabled: boolean;
+  onToggle: (id: string) => void;
+  onPick: (key: string) => void;
+}
+
+function QueueSectionBlock({
+  section,
+  isCollapsed,
+  boardUrl,
+  currentKey,
+  disabled,
+  onToggle,
+  onPick,
+}: SectionProps) {
+  const bodyId = useId();
+  const onClick = useCallback(() => onToggle(section.id), [onToggle, section.id]);
+  const rows = (
+    <TicketRows items={section.items} currentKey={currentKey} disabled={disabled} onPick={onPick} />
+  );
+  // The no-board list has no sections to fold, so it keeps today's plain look.
+  if (section.kind === "all") return rows;
+
+  const isPartial = section.items.length < section.total;
+  const count = isPartial ? `${section.items.length} of ${section.total}` : `${section.total}`;
+  return (
+    <div>
+      <ButtonBase
+        onClick={onClick}
+        aria-expanded={!isCollapsed}
+        aria-controls={bodyId}
+        sx={{
+          width: "100%",
+          justifyContent: "flex-start",
+          gap: 0.5,
+          py: 0.5,
+          px: 0.5,
+          borderRadius: 1,
+          textAlign: "left",
+        }}
+      >
+        {isCollapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
+        <Typography variant="subtitle2" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>
+          {section.name}
+        </Typography>
+        {section.kind === "backlog" ? null : (
+          <Typography variant="caption" color="text.secondary">
+            {section.kind}
+          </Typography>
+        )}
+        <Typography variant="caption" color="text.secondary" sx={{ ml: "auto", flexShrink: 0 }}>
+          {count}
+        </Typography>
+      </ButtonBase>
+      <Collapse in={!isCollapsed}>
+        <div id={bodyId}>
+          {rows}
+          {isPartial && boardUrl !== null ? (
+            <Typography variant="body2" sx={{ py: 0.5, px: 2 }}>
+              <Link href={boardUrl} target="_blank" rel="noopener noreferrer">
+                Open the full board in Jira
+              </Link>
+            </Typography>
+          ) : null}
+        </div>
+      </Collapse>
+    </div>
   );
 }
 
