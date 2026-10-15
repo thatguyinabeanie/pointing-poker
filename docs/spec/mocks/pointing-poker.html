@@ -21,7 +21,7 @@
   --disabled-fg: rgba(10,33,56,.3); --disabled-bg: rgba(10,33,56,.12); --disabled-border: rgba(10,33,56,.12);
   --alert-success-bg: #EAF1E8; --alert-success-fg: #1F3320;
   --alert-error-bg: #FBEDEC; --alert-error-fg: #5E1F1C;
-  --alert-warning-bg: #FBEEE7; --alert-warning-fg: #5E2A10; --sw-thumb: #fafafa;
+  --alert-warning-bg: #FBEEE7; --alert-warning-fg: #5E2A10;
   --mock-bg: #fff8e1; --mock-fg: #5d4300; --mock-border: #c58b00;
   --sh1: 0 2px 1px -1px rgba(0,0,0,.2), 0 1px 1px 0 rgba(0,0,0,.14), 0 1px 3px 0 rgba(0,0,0,.12);
   --sh2: 0 3px 1px -2px rgba(0,0,0,.2), 0 2px 2px 0 rgba(0,0,0,.14), 0 1px 5px 0 rgba(0,0,0,.12);
@@ -159,17 +159,6 @@ a { color: var(--navy); text-decoration: underline; }
 /* Queue panel (left pane) */
 .qrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .qsel { flex: 1 1 100%; }
-.fcl { display: inline-flex; align-items: center; cursor: pointer; }
-.fcl .fl { font-size: .875rem; line-height: 1.43; margin-left: 4px; }
-.fcl.dis { cursor: default; color: var(--text-disabled); }
-.fcl.dis .sw { opacity: .5; }
-.sw { position: relative; display: inline-flex; width: 40px; height: 24px; flex: none; }
-.sw input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; z-index: 1; }
-.sw .track { position: absolute; left: 7px; top: 7px; width: 26px; height: 10px; border-radius: 5px; background: var(--text); opacity: .38; transition: background-color .15s, opacity .15s; }
-.sw .thumb { position: absolute; left: 4px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--sw-thumb); box-shadow: var(--sh1); transition: transform .15s, background-color .15s; }
-.sw input:checked ~ .track { background: var(--navy); opacity: .5; }
-.sw input:checked ~ .thumb { background: var(--navy); transform: translateX(16px); }
-.sw input:focus-visible ~ .thumb { outline: 2px solid var(--navy); outline-offset: 3px; }
 .ib { width: 40px; height: 40px; padding: 8px; border: 0; border-radius: 50%; background: transparent; color: var(--text2); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .ib:hover:not(:disabled) { background: rgba(10,33,56,.05); }
 .ib:disabled { color: var(--disabled-fg); cursor: default; }
@@ -261,7 +250,7 @@ a { color: var(--navy); text-decoration: underline; }
   var CARDS = ['0','1','2','3','5','8','13','21','?','☕'];
   var NUMERIC = CARDS.filter(function (c) { return /^\d+$/.test(c); });
   var BASE = 'https://example.atlassian.net/browse/';
-  function T(k, s, t, st) { return { key: k, summary: s, issueType: t, status: st, url: BASE + k, currentPoints: null, priority: 'Medium', assignee: 'Unassigned', labels: ['needs-pointing'] }; }
+  function T(k, s, t, st) { return { key: k, summary: s, issueType: t, status: st, url: BASE + k, currentPoints: null, priority: 'Medium', assignee: 'Unassigned', labels: [] }; }
   var QUEUE = [
     T('PP-101', 'GDoc export: skip the forced worksheet resize when the grid is already the right size', 'Task', 'In Progress'),
     T('PP-103', 'List quick dashboard reports for report viewers', 'Task', 'Backlog'),
@@ -270,7 +259,7 @@ a { color: var(--navy); text-decoration: underline; }
     T('PP-102', 'Enforce read-only SQL at the API: add a read_only param to queries and SQL scripts', 'Task', 'Backlog'),
     T('PP-106', 'Add query option to dataset creation', 'Task', 'Backlog')
   ];
-  // Extra rows shown when "Needs pointing only" is off (generic sample data).
+  // More unpointed rows (generic sample data); the queue lists every unpointed ticket.
   var MORE = [
     T('PP-107', 'Tidy pagination defaults in the jobs list', 'Task', 'Backlog'),
     T('PP-108', 'Intermittent timeout when listing large table sets', 'Bug', 'Backlog'),
@@ -344,7 +333,7 @@ a { color: var(--navy); text-decoration: underline; }
     ['queue-error', '11. queue-error', 'No ticket loaded. Queue fetch failed (Jira credential warning).']
   ];
   var cur = 'idle', aliceVote = null, pts = '', tkValue = '', ticketless = false, timer = null, snackOpen = false;
-  var project = 'PP', board = 'all', needsOnly = true, clearLabel = true, sq = '', sLoad = false, sTimer = null;
+  var project = 'PP', board = 'all', sq = '', sLoad = false, sTimer = null;
   var qLoad = false, qForce = null, qTimer = null, done = [];
   var root = document.getElementById('root');
 
@@ -383,7 +372,7 @@ a { color: var(--navy); text-decoration: underline; }
       '<span class="me">You are Alice</span></div></header>';
   }
 
-  function qList() { return (needsOnly ? QUEUE : QUEUE.concat(MORE)).filter(function (t) { return done.indexOf(t.key) < 0; }); }
+  function qList() { return QUEUE.concat(MORE).filter(function (t) { return done.indexOf(t.key) < 0; }); }
   function qMode() {
     if (qLoad) return 'loading';
     if (qForce) return qForce;
@@ -395,10 +384,6 @@ a { color: var(--navy); text-decoration: underline; }
       return '<option value="' + o[0] + '"' + (o[0] === val ? ' selected' : '') + '>' + o[1] + '</option>';
     }).join('') + '</select><label for="' + id + '">' + label + '</label><svg class="ic arrow" aria-hidden="true"><use href="#i-dd"/></svg></div>';
   }
-  function switchField(id, label, on, off) {
-    return '<label class="fcl' + (off ? ' dis' : '') + '"><span class="sw"><input type="checkbox" role="switch" id="' + id + '" data-fid="' + id + '"' + (on ? ' checked' : '') + (off ? ' disabled' : '') +
-      '><span class="track"></span><span class="thumb"></span></span><span class="fl">' + label + '</span></label>';
-  }
 
   // LEFT pane: queue
   function queuePanel(v) {
@@ -407,13 +392,12 @@ a { color: var(--navy); text-decoration: underline; }
     var meta = '';
     if (mode === 'loading') meta = '<div class="lp" role="progressbar" aria-label="Loading queue"><i></i><i></i></div>';
     else if (mode === 'error') meta = '<div class="alert warning" role="alert"><span class="ai"><svg class="ic" aria-hidden="true"><use href="#i-warn"/></svg></span><span class="am">' + esc(QERR) + '</span></div>';
-    else meta = (needsOnly || mode === 'empty') ? list.length + (list.length === 1 ? ' ticket' : ' tickets') + ' · updated 2:14 PM' : '50+ tickets · showing first 50';
+    else meta = list.length + (list.length === 1 ? ' ticket' : ' tickets') + ' · updated 2:14 PM';
     var body = '';
     if (mode === 'ok') body = qRows(list, v, 'Unpointed tickets');
-    else if (mode === 'empty') body = '<p class="qempty">No unpointed tickets match. Add the needs-pointing label in Jira or change the filters.</p>';
+    else if (mode === 'empty') body = '<p class="qempty">No unpointed tickets. Change the project or board, or refresh.</p>';
     return '<section class="paper pane" aria-label="Ticket queue"><div class="qrow">' +
       selectField('q-project', 'Project', PROJECTS, project, dis) + selectField('q-board', 'Board', BOARDS, board, dis) +
-      switchField('q-needs', 'Needs pointing only', needsOnly, off) + switchField('q-clear', 'Clear label on save', clearLabel, off) +
       '<button type="button" class="ib" data-act="refresh" data-fid="refresh" aria-label="Refresh queue" title="Refresh queue"' + dis + '><svg class="ic" aria-hidden="true"><use href="#i-refresh"/></svg></button></div>' +
       '<div class="qmeta">' + meta + '</div>' + body +
       '<div class="tf adorn has-value"><svg class="ic srch" aria-hidden="true"><use href="#i-search"/></svg><input id="q-search" data-fid="q-search" type="text" placeholder="PP-123 or words" autocomplete="off" value="' + esc(sq) + '"' + dis + '><label for="q-search">Search tickets (key or text)</label></div>' +
@@ -552,7 +536,7 @@ a { color: var(--navy); text-decoration: underline; }
     clearTimeout(timer); clearTimeout(qTimer); clearTimeout(sTimer);
     qLoad = false; sLoad = false;
     // reset = a mock-only jump (switcher, step, deep link): restore the queue controls and sample data.
-    if (opts.reset) { TICKET = QUEUE[0]; done = []; project = 'PP'; board = 'all'; needsOnly = true; clearLabel = true; sq = ''; }
+    if (opts.reset) { TICKET = QUEUE[0]; done = []; project = 'PP'; board = 'all'; sq = ''; }
     if (opts.reset || QFORCE[s]) qForce = QFORCE[s] || null;
     cur = s;
     if (s === 'saved' && done.indexOf(TICKET.key) < 0) done.push(TICKET.key);
@@ -595,8 +579,6 @@ a { color: var(--navy); text-decoration: underline; }
     var id = e.target.id;
     if (id === 'q-project') { project = e.target.value; queueLoad(); return; }
     if (id === 'q-board') { board = e.target.value; qForce = null; render(); return; }
-    if (id === 'q-needs') { needsOnly = e.target.checked; qForce = null; render(); return; }
-    if (id === 'q-clear') { clearLabel = e.target.checked; render(); return; }
     if (id !== 'pts') return;
     pts = e.target.value;
     e.target.parentNode.classList.toggle('has-value', pts !== '');
