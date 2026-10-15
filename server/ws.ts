@@ -153,22 +153,28 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     return env().JIRA_NEEDS_POINTING_LABEL;
   }
 
-  function send(socket: WebSocket, msg: ServerMessage): void {
+  function sendRaw(socket: WebSocket, text: string): void {
     if (socket.readyState !== socket.OPEN) return;
     try {
-      socket.send(JSON.stringify(msg));
+      socket.send(text);
     } catch (err) {
       app.log.error({ err }, "ws send failed");
     }
   }
 
+  function send(socket: WebSocket, msg: ServerMessage): void {
+    sendRaw(socket, JSON.stringify(msg));
+  }
+
   function broadcast(): void {
     let recipients = 0;
     for (const [userId, sockets] of registry) {
-      // One snapshot per user: every tab of that user sees the same view.
-      const snapshot = game.viewFor(state, userId);
+      // One snapshot per user: every tab of that user sees the same view. Stringified once per
+      // user rather than per tab, since a snapshot carries the whole queue and ticket HTML.
+      const msg: ServerMessage = { type: "state", snapshot: game.viewFor(state, userId) };
+      const text = JSON.stringify(msg);
       for (const socket of sockets) {
-        send(socket, { type: "state", snapshot });
+        sendRaw(socket, text);
         recipients += 1;
       }
     }
