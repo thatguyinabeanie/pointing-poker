@@ -189,7 +189,18 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   // ---------- Jira-backed helpers shared by commands and bootstrap (section 14) ----------
 
   async function fetchQueue(): Promise<void> {
+    // Bumped first so a fetch still in flight for a previous project is dropped.
     const seq = ++queueSeq;
+    if (state.queueSettings.projectKey === null) {
+      // No project is a normal state (JIRA_DEFAULT_PROJECT unset, or cleared), not a Jira
+      // failure: prompt instead of calling Jira, and no warn log. The empty sections go first
+      // because an error keeps the previous sections, which belong to the old project here.
+      const now = new Date().toISOString();
+      applyState(game.setQueue(state, { sections: [] }, now));
+      applyState(game.setQueue(state, { error: "Pick a project to load its queue." }, now));
+      broadcast();
+      return;
+    }
     // setQueueSettings already set loading and broadcast it; skip a second identical broadcast.
     if (!state.queue.loading) {
       applyState(game.setQueueLoading(state));
@@ -302,12 +313,27 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     return null;
   }
 
+  // Shared by bootstrap's first fetch and its retries, so a burst of connections while the
+  // project list is empty makes one Jira call rather than one per socket.
+  let projectsInFlight: Promise<JiraFailure | null> | null = null;
+  function fetchProjectsOnce(): Promise<JiraFailure | null> {
+    projectsInFlight ??= fetchProjects().finally(() => {
+      projectsInFlight = null;
+    });
+    return projectsInFlight;
+  }
+
   // First connection fills the shared lists and the queue. Failures stay in logs / queue.error.
   function bootstrap(): void {
-    if (bootstrapped) return;
-    bootstrapped = true;
     const onThrow = (err: unknown) => app.log.error({ err }, "bootstrap fetch failed");
-    void fetchProjects().catch(onThrow);
+    if (bootstrapped) {
+      // A failed first fetch (Jira down at startup) would otherwise leave the project picker
+      // empty until the process restarts. A later connection retries it.
+      if (state.projects.length === 0) void fetchProjectsOnce().catch(onThrow);
+      return;
+    }
+    bootstrapped = true;
+    void fetchProjectsOnce().catch(onThrow);
     // The queue waits for default board resolution so its first fetch uses the resolved board.
     void (async () => {
       if (defaultBoard === null) {
@@ -559,7 +585,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     async function refreshProjects(): Promise<void> {
       // jira.ts caches both lists for 10 minutes and the protocol has no cache-bypass argument,
       // so inside that window this re-sends the cached lists.
-      const [projectsFailure, boardsFailure] = await Promise.all([fetchProjects(), fetchBoards()]);
+      const [projectsFailure, boardsFailure] = await Promise.all([
+        fetchProjectsOnce(),
+        fetchBoards(),
+      ]);
       const failure = projectsFailure ?? boardsFailure;
       if (failure) sendError(socket, failure.reason, failure.message);
     }

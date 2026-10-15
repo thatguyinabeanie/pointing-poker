@@ -479,7 +479,9 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     settings: QueueSettings,
     label: string,
   ): Promise<Result<QueueSection[]>> {
-    if (settings.projectKey === null) return notConfigured();
+    // ws.ts never calls this without a project. If something does, say what is missing rather
+    // than "Jira is not configured", which sent people checking the env vars.
+    if (settings.projectKey === null) return fail("jira_error", "No project selected.");
 
     // Prefer the field id (cf[NNNNN]) when we know it: it is immune to renamed or duplicate
     // fields. Discovery failure is not fatal here, the field name works in most sites.

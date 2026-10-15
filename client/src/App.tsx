@@ -59,7 +59,14 @@ export function App() {
     (settings: Partial<QueueSettings>) => dispatch({ type: "setQueueSettings", settings }),
     [dispatch],
   );
-  const onRefresh = useCallback(() => dispatch({ type: "refreshQueue" }), [dispatch]);
+  const projectCount = snapshot?.projects.length ?? 0;
+  const onRefresh = useCallback(() => {
+    dispatch({ type: "refreshQueue" });
+    // An empty project list means the server's fetch failed; this is the retry without a
+    // reconnect. Not sent otherwise, since the server caches the list anyway.
+    // Plain send: if the socket is down, the dispatch above already showed the notice.
+    if (projectCount === 0) send({ type: "refreshProjects" });
+  }, [dispatch, send, projectCount]);
   const onPick = useCallback((key: string) => dispatch({ type: "loadTicket", key }), [dispatch]);
   const onSelect = useCallback(
     (card: string) => dispatch({ type: "vote", card: card as Card }),
