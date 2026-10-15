@@ -8,13 +8,15 @@ JIRA_BASE_URL=
 JIRA_API_TOKEN_USERNAME=
 JIRA_API_TOKEN_PASSWORD=
 JIRA_DEFAULT_PROJECT=
-JIRA_NEEDS_POINTING_LABEL=needs-pointing
+JIRA_NEEDS_POINTING_LABEL=
 # Optional: skip Story Points field discovery
 JIRA_STORY_POINTS_FIELD=
 
 # Server
-PORT=3838
-LOG_LEVEL=info
+# Set NODE_ENV=production on deployed instances (the Docker image already does)
+NODE_ENV=
+PORT=
+LOG_LEVEL=
 # Optional: comma-separated Origin hosts allowed on the WebSocket (defaults to the Host header)
 ALLOWED_ORIGINS=
 
@@ -27,7 +29,7 @@ IDENTITY_USER_ID_QUERY=
 IDENTITY_USERNAME_QUERY=
 
 # Local-only identity (ignored when NODE_ENV=production)
-DEV_USER_ID=1
-DEV_USERNAME=localdev
+DEV_USER_ID=
+DEV_USERNAME=
 # Set to 1 to allow ?devUser=<name> for multi-player local testing
-ALLOW_DEV_USER=1
+ALLOW_DEV_USER=
