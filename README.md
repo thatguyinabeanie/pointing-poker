@@ -18,6 +18,21 @@ as a service on the hosting platform, and it has one shared room per deployed in
 6. Check that the Story Points value changed in Jira.
 7. Edit a component file and confirm the page updates without a full reload.
 
+## Run with Docker Compose
+
+`compose.yaml` builds the image from the Dockerfile and starts it on port 3838.
+
+```sh
+docker compose up --build        # build and start
+HOST_PORT=3840 docker compose up --build   # use a different host port
+docker compose down              # stop and remove the container
+```
+
+If a `.env` file exists, Compose passes it to the container. Without one, the app starts with
+defaults and will not be fully configured. The image runs in production mode, so `?devUser=`
+does not work. Send the identity headers named by `IDENTITY_USER_ID_HEADER` and
+`IDENTITY_USERNAME_HEADER`, or use `npm run dev` for browser play.
+
 ## How it identifies people
 
 On the hosting platform, the auth proxy adds identity headers to each request. The app reads
