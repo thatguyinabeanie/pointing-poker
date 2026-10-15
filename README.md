@@ -28,6 +28,8 @@ HOST_PORT=3840 docker compose up --build   # use a different host port
 docker compose down              # stop and remove the container
 ```
 
+The port binds to localhost (127.0.0.1) by default because the app trusts identity headers and there is no auth proxy locally, so other machines on your network could otherwise impersonate a user. Set `HOST_BIND=0.0.0.0` only on a trusted network to expose it.
+
 If a `.env` file exists, Compose passes it to the container. Without one, the app starts with
 defaults and will not be fully configured. The image runs in production mode, so `?devUser=`
 does not work. Send the identity headers named by `IDENTITY_USER_ID_HEADER` and

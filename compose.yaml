@@ -13,8 +13,9 @@ services:
     image: pointing-poker:local
     # Matches scripts/docker-build.sh; runs under emulation on Apple Silicon.
     platform: linux/amd64
+    # Identity headers are trusted and there is no auth proxy locally, so bind to localhost; set HOST_BIND=0.0.0.0 only on a trusted network.
     ports:
-      - "${HOST_PORT:-3838}:3838"
+      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3838}:3838"
     env_file:
       - path: .env
         required: false
