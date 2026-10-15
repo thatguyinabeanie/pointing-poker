@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import { z } from "zod";
-import { ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
+import { expandBareIssueNumber, ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
 import { DECK } from "../shared/deck.ts";
 import type { QueueSection, QueueSettings, ServerMessage } from "../shared/protocol.ts";
 import { env } from "./env.ts";
@@ -466,10 +466,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     }
 
     async function loadTicket(rawKey: string): Promise<void> {
-      let key = rawKey.trim();
-      const projectKey = state.queueSettings.projectKey;
       // A bare number uses the room's project; without one it fails the key check below.
-      if (/^\d+$/.test(key) && projectKey !== null) key = `${projectKey}-${key}`;
+      let key = expandBareIssueNumber(rawKey.trim(), state.queueSettings.projectKey);
       if (!ISSUE_KEY.test(key)) {
         sendError(socket, "bad_key", MESSAGES.bad_key);
         return;

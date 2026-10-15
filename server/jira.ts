@@ -1,4 +1,4 @@
-import { ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
+import { expandBareIssueNumber, ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
 import type {
   JiraBoard,
   JiraProject,
@@ -707,11 +707,13 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     if (q.length < MIN_QUERY_LENGTH) {
       return fail("query_too_short", `Type at least ${MIN_QUERY_LENGTH} characters to search.`);
     }
-    // An exact key is looked up directly (in any project); anything else is a prefix text
-    // search, scoped to the room's project when one is set.
-    if (ISSUE_KEY.test(q)) {
+    // An exact key is looked up directly (in any project), and so is a bare number when the
+    // room has a project; anything else is a prefix text search, scoped to the room's project
+    // when one is set. Without the expansion "14417" became text ~ "14417*" and found nothing.
+    const key = expandBareIssueNumber(q, projectKey);
+    if (ISSUE_KEY.test(key)) {
       return runSearch(
-        `key = ${jqlQuote(q.toUpperCase())} AND statusCategory != Done ORDER BY updated DESC`,
+        `key = ${jqlQuote(key.toUpperCase())} AND statusCategory != Done ORDER BY updated DESC`,
         SEARCH_PAGE_SIZE,
       );
     }
