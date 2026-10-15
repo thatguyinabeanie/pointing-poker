@@ -132,9 +132,14 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   const { jira } = opts;
 
   // All room state lives in this closure, not at module scope, so each app instance is isolated.
-  let state = game.createInitialState({
-    defaultProjectKey: env().JIRA_DEFAULT_PROJECT?.toUpperCase() ?? null,
-  });
+  const defaultProjectKey = env().JIRA_DEFAULT_PROJECT?.toUpperCase() ?? null;
+  // A name or numeric id; only Jira can say which board it is, so it is resolved at bootstrap.
+  let defaultBoard = env().JIRA_DEFAULT_BOARD ?? null;
+  if (defaultBoard !== null && defaultProjectKey === null) {
+    app.log.warn("JIRA_DEFAULT_BOARD is ignored because JIRA_DEFAULT_PROJECT is not set");
+    defaultBoard = null;
+  }
+  let state = game.createInitialState({ defaultProjectKey });
   let loadSeq = 0;
   let errorId = 0;
   let queueSeq = 0;
@@ -207,24 +212,79 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     broadcast();
   }
 
-  // Returns the failure so refreshProjects can report it; automatic callers only log it.
-  async function fetchBoards(): Promise<JiraFailure | null> {
+  // "skipped" (no project) and "stale" (a newer fetch or a project change won) mean nothing
+  // was applied; bootstrap needs them told apart from a real success.
+  type BoardsOutcome =
+    | { status: "ok" | "skipped" | "stale" }
+    | { status: "failed"; failure: JiraFailure };
+
+  async function loadBoards(): Promise<BoardsOutcome> {
     const projectKey = state.queueSettings.projectKey;
     // A null project clears nothing and fetches nothing.
-    if (projectKey === null) return null;
+    if (projectKey === null) return { status: "skipped" };
     const seq = ++boardsSeq;
     const res = await jira.listBoards(projectKey);
     if (seq !== boardsSeq || state.queueSettings.projectKey !== projectKey) {
       app.log.debug({ projectKey }, "dropped stale boards result");
-      return null;
+      return { status: "stale" };
     }
     if (!res.ok) {
       app.log.warn({ reason: res.reason, projectKey }, "boards fetch failed");
-      return res;
+      return { status: "failed", failure: res };
     }
     applyState(game.setBoards(state, res.value));
     broadcast();
-    return null;
+    return { status: "ok" };
+  }
+
+  // Returns the failure so refreshProjects can report it; automatic callers only log it.
+  async function fetchBoards(): Promise<JiraFailure | null> {
+    const outcome = await loadBoards();
+    return outcome.status === "failed" ? outcome.failure : null;
+  }
+
+  // Resolves JIRA_DEFAULT_BOARD (numeric id or board name) against the default project's boards
+  // and applies it before the first queue fetch. Any miss leaves boardId null so the queue works.
+  async function applyDefaultBoard(): Promise<void> {
+    const wanted = defaultBoard;
+    if (wanted === null) return;
+    const untouched = () =>
+      state.queueSettings.boardId === null && state.queueSettings.projectKey === defaultProjectKey;
+
+    let outcome: BoardsOutcome | "threw";
+    try {
+      outcome = await loadBoards();
+      // Stale means another boards fetch raced this one; ask again once rather than guess.
+      if (outcome.status === "stale" && untouched()) outcome = await loadBoards();
+    } catch (err) {
+      app.log.error({ err }, "bootstrap boards fetch threw");
+      outcome = "threw";
+    }
+    // The user changed the project or board while this was loading: leave their choice alone.
+    if (!untouched()) return;
+
+    const fail = (msg: string, extra: object = {}) =>
+      app.log.warn({ projectKey: defaultProjectKey, ...extra }, msg);
+    if (outcome === "threw" || outcome.status !== "ok") {
+      fail("JIRA_DEFAULT_BOARD not applied: boards could not be loaded; starting with no board");
+      return;
+    }
+    const needle = wanted.trim();
+    const matches = /^\d+$/.test(needle)
+      ? state.boards.filter((board) => board.id === Number(needle))
+      : state.boards.filter((board) => board.name.trim().toLowerCase() === needle.toLowerCase());
+    const [match] = matches;
+    if (matches.length === 1 && match) {
+      applyState(game.setQueueSettings(state, { boardId: match.id }));
+      broadcast();
+    } else if (matches.length === 0) {
+      fail("JIRA_DEFAULT_BOARD matches no board of the default project; starting with no board");
+    } else {
+      fail(
+        "JIRA_DEFAULT_BOARD name is ambiguous (several boards share it); use the numeric board id",
+        { matches: matches.length },
+      );
+    }
   }
 
   async function fetchProjects(): Promise<JiraFailure | null> {
@@ -244,8 +304,15 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     bootstrapped = true;
     const onThrow = (err: unknown) => app.log.error({ err }, "bootstrap fetch failed");
     void fetchProjects().catch(onThrow);
-    void fetchBoards().catch(onThrow);
-    void fetchQueue().catch(onThrow);
+    // The queue waits for default board resolution so its first fetch uses the resolved board.
+    void (async () => {
+      if (defaultBoard === null) {
+        void fetchBoards().catch(onThrow);
+      } else {
+        await applyDefaultBoard();
+      }
+      await fetchQueue();
+    })().catch(onThrow);
   }
 
   app.get("/ws", { websocket: true }, (socket, request) => {

@@ -52,6 +52,7 @@ Numbers are stable references; new decisions are appended, never renumbered.
 28. **Docker Hub repo is public (10/15/2026).** The hosting platform cannot pull private images: its pre-deploy image check uses its own Docker Hub account, and it has no pull-secret support.
 29. **Repo is now public, and pre-PR history was squashed (10/15/2026).** This supersedes the private visibility in decision 24. Before the first PR the history was squashed so no internal names remain in any commit.
 30. **A ticket needs pointing if labeled or unpointed (10/15/2026).** The queue JQL is now `labels = X OR points is EMPTY`, and the "Labeled only" switch (still on by default, wire field `needsPointingOnly`) narrows it to labeled tickets so a pointed-but-labeled ticket can be re-pointed. This refines decision 15.
+31. **Optional default board by name or id (10/15/2026).** `JIRA_DEFAULT_BOARD` takes a board name or numeric id and is resolved against the default project's boards at bootstrap, before the first queue fetch. A missing, unknown or ambiguous value falls back to no board, with one warn log.
 
 ## Where each decision is specified
 

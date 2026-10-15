@@ -18,6 +18,9 @@ const schema = z.object({
     .string()
     .regex(/^[A-Z][A-Z0-9_]*$/i)
     .optional(),
+  // A board name, or a numeric id (the number in .../boards/123). Resolved against Jira at
+  // bootstrap, so any non-empty text is accepted here. Needs JIRA_DEFAULT_PROJECT.
+  JIRA_DEFAULT_BOARD: z.string().trim().min(1).optional(),
   JIRA_NEEDS_POINTING_LABEL: z.string().min(1).default(NEEDS_POINTING_LABEL),
   // Comma-separated in the environment; exposed as a trimmed list with empties dropped.
   ALLOWED_ORIGINS: z
