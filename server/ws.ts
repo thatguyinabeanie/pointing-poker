@@ -132,7 +132,9 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   const { jira } = opts;
 
   // All room state lives in this closure, not at module scope, so each app instance is isolated.
-  let state = game.createInitialState({ defaultProjectKey: env().JIRA_DEFAULT_PROJECT ?? null });
+  let state = game.createInitialState({
+    defaultProjectKey: env().JIRA_DEFAULT_PROJECT?.toUpperCase() ?? null,
+  });
   let loadSeq = 0;
   let errorId = 0;
   let queueSeq = 0;

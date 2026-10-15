@@ -119,6 +119,9 @@ export function useGameSocket(): {
       };
 
       socket.onclose = (event) => {
+        // A wake-up event may already have opened a newer socket; this close is stale then, so
+        // leave its ref, connected flag and retry timer alone.
+        if (socketRef.current !== socket) return;
         socketRef.current = null;
         setConnected(false);
         if (cancelled) return;
