@@ -42,7 +42,7 @@ All mutators return new state objects; never mutate a state in place. The comple
 
 **`server/lib/proxy-identity.ts`**: already in the repo. Exports `interface ProxyIdentity { userId: number; username: string }` and `getProxyIdentity(headers: Headers, requestUrl: string, config: ProxyIdentityConfig): ProxyIdentity | null`. The module is pure; `server/identity.ts` builds the config with `identityConfigFromEnv()`, which reads the header names from `IDENTITY_USER_ID_HEADER` and `IDENTITY_USERNAME_HEADER`, the optional query-param names from `IDENTITY_USER_ID_QUERY` and `IDENTITY_USERNAME_QUERY`, and the dev fallback from `DEV_USER_ID` and `DEV_USERNAME`. Do not edit it.
 
-**`server/identity.ts`**: `export interface Identity { userId: number; username: string }`, `export function toHeaders(req: { headers: IncomingHttpHeaders }): Headers`, `export function resolveIdentity(req: { headers: IncomingHttpHeaders; url: string }): Identity | null`, `export function identityMode(): 'proxy' | 'dev'`. Section 5.
+**`server/identity.ts`**: `export interface Identity { userId: number; username: string }`, `export function toHeaders(req: { headers: IncomingHttpHeaders }): Headers`, `export function resolveIdentity(req: { headers: IncomingHttpHeaders; url: string }): Identity | null`, `export function identityMode(): 'proxy' | 'dev'`, `export function identityConfigWarning(): string | null`. Section 5.
 
 **`server/routes/health.ts`**: `export async function healthRoutes(app: FastifyInstance): Promise<void>`.
 
@@ -209,6 +209,8 @@ The helper bundles steps 1, 2 and 4, so step 3 has to be inserted around it. Imp
 
 `identityMode()` returns `'dev'` when `NODE_ENV !== 'production'` and (`ALLOW_DEV_USER === '1'` or `DEV_USER_ID` is set), else `'proxy'`. `index.ts` logs exactly `identity mode: proxy` or `identity mode: dev` at info level right after `listen` succeeds, via `app.log.info(\`identity mode: ${identityMode()}\`)`. Also log whether Jira is configured and whether `ALLOWED_ORIGINS` is set (booleans only).
 
+`identityConfigWarning()` returns a message only when `NODE_ENV === 'production'` and `IDENTITY_USER_ID_HEADER` and `IDENTITY_USERNAME_HEADER` are not both set; otherwise null. `index.ts` logs it at warn level right after the `identity mode` line. The message names the two variables only, never their values, and says every request will be unauthenticated and `/ws` will close with 4401. Without it, a deploy missing the header names rejects every user with no hint in the logs (decision 36).
+
 ## 6. HTTP routes and app wiring
 
 `GET /api/status` returns `200 {"ok":true}`; no identity needed (the platform's health check, set by its health-check path setting). `GET /api/me` returns `200 {"userId":number,"username":string}` or `401 {"error":"unauthenticated"}` when `resolveIdentity(request)` is null. Both set `Cache-Control: no-store`.
@@ -292,7 +294,7 @@ Graceful close: the plugin's default `preClose` calls `client.close()` with no s
 
 Use pino through `app.log` and `request.log` only; no `console`. Fastify's default request serializer does not log headers, but set `redact: { paths: ['req.headers.authorization', 'req.headers.cookie', '*.authorization', '*.token', '*.password'], censor: '[redacted]' }` as defense in depth. Never log the Jira Basic header, token, username or password, any `process.env` dump, raw message bodies, or card values before reveal. Log user identity as `userId` only (no username, to stay clear of PII rules); the username appears solely in the `hello` message and snapshots.
 
-Info: server listening, `identity mode: ...`, Jira configured flag, ws connect (userId) and close (userId, code), loadTicket success and save outcome (ticket key, points, ok), stale-round save completion, heartbeat terminations, shutdown start. Warn: origin rejection (origin and host), Jira failures (`reason`, ticket key, message), partial Jira env. Error: caught handler exceptions, ws errors, forced close failures. Debug: each command type received with userId and phase, dropped stale loadTicket results, per-broadcast recipient count.
+Info: server listening, `identity mode: ...`, Jira configured flag, ws connect (userId) and close (userId, code), loadTicket success and save outcome (ticket key, points, ok), stale-round save completion, heartbeat terminations, shutdown start. Warn: origin rejection (origin and host), Jira failures (`reason`, ticket key, message), partial Jira env, identity header names not both set (production only, once at startup, variable names only). Error: caught handler exceptions, ws errors, forced close failures. Debug: each command type received with userId and phase, dropped stale loadTicket results, per-broadcast recipient count.
 
 ## 10. Error and edge-case table
 

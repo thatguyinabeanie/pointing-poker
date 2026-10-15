@@ -279,7 +279,7 @@ Set these on the platform service. The first rows come from the draft `docs/spec
 | `LOG_LEVEL` | Optional, default `info` | `debug` for more detail. |
 | `JIRA_DEFAULT_PROJECT` | Optional, no default | Seeds the queue's project. |
 | `ALLOWED_ORIGINS` | Optional | Only if the WebSocket Origin check fails behind the auth proxy. |
-| `IDENTITY_USER_ID_HEADER`, `IDENTITY_USERNAME_HEADER` | Set to the header names the auth proxy injects | No defaults in the repo. Unset in production means unauthenticated: `/ws` closes with 4401. |
+| `IDENTITY_USER_ID_HEADER`, `IDENTITY_USERNAME_HEADER` | Set to the header names the auth proxy injects | No defaults in the repo. Unset in production means unauthenticated: `/ws` closes with 4401. Production logs one startup warning naming both variables (no values) when they are not both set. |
 
 Do not set `ALLOW_DEV_USER` or `DEV_USER_ID` and `DEV_USERNAME` in production. The image sets `NODE_ENV=production`, which disables them anyway.
 
