@@ -40,11 +40,16 @@ export function ParticipantChips({ players, phase, meId, stats }: Props) {
           );
           return (
             <Box component="li" key={p.userId} sx={{ opacity: p.connected ? 1 : 0.5 }}>
+              {/* MUI Chip warns when given both avatar and icon and renders only the avatar,
+                  so the vote-status icon was never visible. While voting the status icon owns
+                  the leading slot; after reveal the vote is in the label and the initial
+                  returns. */}
               <Chip
                 size="small"
                 variant="outlined"
-                avatar={<Avatar>{p.username.charAt(0).toUpperCase()}</Avatar>}
-                icon={icon}
+                {...(icon
+                  ? { icon }
+                  : { avatar: <Avatar>{p.username.charAt(0).toUpperCase()}</Avatar> })}
                 label={p.connected ? label : `${label} (offline)`}
               />
             </Box>
