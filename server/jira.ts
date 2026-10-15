@@ -32,8 +32,7 @@ export interface JiraClient {
   listProjects(): Promise<Result<JiraProject[]>>;
   listBoards(projectKey: string): Promise<Result<JiraBoard[]>>;
   boardType(boardId: number): Promise<Result<string>>;
-  searchQueue(settings: QueueSettings, label: string): Promise<Result<QueueSection[]>>;
-  removeLabel(key: string, label: string): Promise<Result<void>>;
+  searchQueue(settings: QueueSettings): Promise<Result<QueueSection[]>>;
   searchTickets(projectKey: string | null, query: string): Promise<Result<QueueItem[]>>;
 }
 
@@ -485,10 +484,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
 
   // Sections are `Result`s all the way down: the first failed section fails the refresh, so
   // the queue is never partial.
-  async function searchQueue(
-    settings: QueueSettings,
-    label: string,
-  ): Promise<Result<QueueSection[]>> {
+  async function searchQueue(settings: QueueSettings): Promise<Result<QueueSection[]>> {
     // ws.ts never calls this without a project. If something does, say what is missing rather
     // than "Jira is not configured", which sent people checking the env vars.
     if (settings.projectKey === null) return fail("jira_error", "No project selected.");
@@ -499,13 +495,10 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     const idMatch = field.ok ? /^customfield_(\d+)$/.exec(field.value) : null;
     const pointsField = idMatch ? `cf[${idMatch[1]}]` : '"Story Points"';
 
-    // A ticket needs pointing if it has the label OR has no Story Points. The switch narrows
-    // that to labeled tickets only (pointed or not, so a labeled ticket can be re-pointed).
-    const clause = `statusCategory != Done AND ${
-      settings.needsPointingOnly
-        ? `labels = ${jqlQuote(label)}`
-        : `(labels = ${jqlQuote(label)} OR ${pointsField} is EMPTY)`
-    }`;
+    // A ticket needs pointing when it is not Done and has no Story Points. Any To Do status
+    // counts (Untriaged and Backlog alike); a label filter used to hide unpointed Backlog
+    // tickets, so it was removed (decision log, 10/15/2026).
+    const clause = `statusCategory != Done AND ${pointsField} is EMPTY`;
 
     if (settings.boardId === null) {
       const found = await searchIssues(
@@ -733,24 +726,6 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     );
   }
 
-  async function removeLabel(key: string, label: string): Promise<Result<void>> {
-    const res = await request(
-      "PUT",
-      `/rest/api/3/issue/${encodeURIComponent(key)}`,
-      { update: { labels: [{ remove: label }] } },
-      // Unlike setStoryPoints, a 400 here is not about the edit screen, so keep it generic.
-      { badRequestReason: "jira_error" },
-    );
-    if (!res.ok) return res;
-    if (res.status !== 204) {
-      return fail(
-        "jira_error",
-        `Jira returned unexpected HTTP ${res.status} for the label update.`,
-      );
-    }
-    return { ok: true, value: undefined };
-  }
-
   return {
     storyPointsFieldId,
     getIssue,
@@ -759,7 +734,6 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     listBoards,
     boardType,
     searchQueue,
-    removeLabel,
     searchTickets,
   };
 }

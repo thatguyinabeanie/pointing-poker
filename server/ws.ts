@@ -30,8 +30,6 @@ const commandSchema = z.discriminatedUnion("type", [
         .nullable()
         .optional(),
       boardId: z.number().int().positive().nullable().optional(),
-      needsPointingOnly: z.boolean().optional(),
-      clearLabelOnSave: z.boolean().optional(),
     }),
   }),
   z.object({ type: z.literal("refreshQueue") }),
@@ -149,10 +147,6 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   let bootstrapped = false;
   const registry = new Map<number, Set<WebSocket>>();
 
-  function label(): string {
-    return env().JIRA_NEEDS_POINTING_LABEL;
-  }
-
   function sendRaw(socket: WebSocket, text: string): void {
     if (socket.readyState !== socket.OPEN) return;
     try {
@@ -214,7 +208,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     }
     let outcome: { sections: QueueSection[] } | { error: string };
     try {
-      const res = await jira.searchQueue(state.queueSettings, label());
+      const res = await jira.searchQueue(state.queueSettings);
       outcome = res.ok ? { sections: res.value } : { error: res.message };
       if (!res.ok) app.log.warn({ reason: res.reason }, "queue fetch failed");
     } catch (err) {
@@ -553,15 +547,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         }
         if (!res.ok) return;
 
-        // The captured key stays valid on a stale round, so label removal and refresh still run.
-        if (state.queueSettings.clearLabelOnSave) {
-          const removed = await jira.removeLabel(key, label());
-          if (!removed.ok) {
-            log.warn({ reason: removed.reason, key }, "label removal failed");
-            sendError(socket, removed.reason, removed.message);
-          }
-        }
-        // The ticket has points now, so it leaves the queue. Not subject to the 5s refresh window.
+        // The ticket has points now, so it leaves the queue, even when the round went stale.
+        // Not subject to the 5s refresh window.
         await fetchQueue();
       });
     }
@@ -649,7 +636,6 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         type: "hello",
         me: { userId, username },
         deck: [...DECK],
-        needsPointingLabel: label(),
       });
       broadcast();
       bootstrap();

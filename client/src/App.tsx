@@ -20,17 +20,8 @@ import { useGameSocket } from "./useGameSocket.ts";
 type Notice = { id: number; message: string };
 
 export function App() {
-  const {
-    snapshot,
-    me,
-    connected,
-    send,
-    error,
-    disconnectedReason,
-    search,
-    searchResults,
-    needsPointingLabel,
-  } = useGameSocket();
+  const { snapshot, me, connected, send, error, disconnectedReason, search, searchResults } =
+    useGameSocket();
   const [notice, setNotice] = useState<Notice | null>(null);
   // Local ids count down from -1 so they never collide with the server's positive error ids.
   const localNoticeId = useRef(-1);
@@ -114,7 +105,6 @@ export function App() {
             boards={snapshot.boards}
             queue={snapshot.queue}
             searchResults={searchResults}
-            needsPointingLabel={needsPointingLabel}
             currentKey={snapshot.ticket?.key ?? null}
             disabled={disabled}
             onChangeSettings={onChangeSettings}

@@ -8,7 +8,6 @@ import ButtonBase from "@mui/material/ButtonBase";
 import Chip from "@mui/material/Chip";
 import Collapse from "@mui/material/Collapse";
 import FormControl from "@mui/material/FormControl";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
 import InputLabel from "@mui/material/InputLabel";
@@ -21,7 +20,6 @@ import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { type ChangeEvent, type ReactNode, useCallback, useId, useMemo, useState } from "react";
@@ -62,7 +60,6 @@ interface Props {
   boards: JiraBoard[];
   queue: QueueState;
   searchResults: SearchResults | null;
-  needsPointingLabel: string;
   currentKey: string | null;
   disabled: boolean;
   onChangeSettings: (partial: Partial<QueueSettings>) => void;
@@ -77,7 +74,6 @@ export function QueuePanel({
   boards,
   queue,
   searchResults,
-  needsPointingLabel,
   currentKey,
   disabled,
   onChangeSettings,
@@ -127,14 +123,6 @@ export function QueuePanel({
   const onBoardChange = useCallback(
     (e: SelectChangeEvent<number | "">) =>
       onChangeSettings({ boardId: e.target.value === "" ? null : e.target.value }),
-    [onChangeSettings],
-  );
-  const onNeedsPointingChange = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => onChangeSettings({ needsPointingOnly: e.target.checked }),
-    [onChangeSettings],
-  );
-  const onClearLabelChange = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => onChangeSettings({ clearLabelOnSave: e.target.checked }),
     [onChangeSettings],
   );
   const onQueryChange = useCallback(
@@ -208,33 +196,6 @@ export function QueuePanel({
               ))}
             </Select>
           </FormControl>
-          <FormControlLabel
-            label={
-              <>
-                Labeled only
-                <Typography variant="caption" color="text.secondary" component="div">
-                  Off: labeled or unpointed tickets
-                </Typography>
-              </>
-            }
-            control={
-              <Switch
-                checked={settings.needsPointingOnly}
-                disabled={disabled}
-                onChange={onNeedsPointingChange}
-              />
-            }
-          />
-          <FormControlLabel
-            label="Clear label on save"
-            control={
-              <Switch
-                checked={settings.clearLabelOnSave}
-                disabled={disabled}
-                onChange={onClearLabelChange}
-              />
-            }
-          />
           <IconButton
             aria-label="Refresh queue"
             onClick={onRefresh}
@@ -278,8 +239,7 @@ export function QueuePanel({
 
         {!queue.loading && !queue.error && totalTickets === 0 ? (
           <Typography color="text.secondary">
-            No tickets need pointing. Add the {needsPointingLabel} label in Jira or change the
-            filters.
+            No unpointed tickets. Change the project or board, or refresh.
           </Typography>
         ) : (
           <Stack spacing={1}>

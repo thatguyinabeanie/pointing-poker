@@ -42,13 +42,9 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     players: new Map(),
     round: 0,
     jiraSave: { status: "idle" },
-    // The label filter defaults OFF: the label is not in use yet, so the queue
-    // shows labeled or unpointed tickets until the team starts labeling.
     queueSettings: {
       projectKey: opts.defaultProjectKey ?? null,
       boardId: null,
-      needsPointingOnly: false,
-      clearLabelOnSave: true,
     },
     queue: { sections: [], loading: false, error: null, fetchedAt: null },
     projects: [],
@@ -160,19 +156,13 @@ export function setQueueSettings(state: GameState, partial: Partial<QueueSetting
   const next: QueueSettings = { ...state.queueSettings };
   if (partial.projectKey !== undefined) next.projectKey = partial.projectKey;
   if (partial.boardId !== undefined) next.boardId = partial.boardId;
-  if (partial.needsPointingOnly !== undefined) next.needsPointingOnly = partial.needsPointingOnly;
-  if (partial.clearLabelOnSave !== undefined) next.clearLabelOnSave = partial.clearLabelOnSave;
 
   const projectChanged = next.projectKey !== state.queueSettings.projectKey;
   // A board belongs to one project, so a project change always drops the board, even if
   // the same message also named one (that id was picked from the old project's list).
   if (projectChanged) next.boardId = null;
 
-  const changed =
-    projectChanged ||
-    next.boardId !== state.queueSettings.boardId ||
-    next.needsPointingOnly !== state.queueSettings.needsPointingOnly ||
-    next.clearLabelOnSave !== state.queueSettings.clearLabelOnSave;
+  const changed = projectChanged || next.boardId !== state.queueSettings.boardId;
   if (!changed) return ok(state);
 
   return ok({

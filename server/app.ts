@@ -28,7 +28,6 @@ function unconfiguredJira(): JiraClient {
     listBoards: fail,
     boardType: fail,
     searchQueue: fail,
-    removeLabel: fail,
     searchTickets: fail,
   };
 }

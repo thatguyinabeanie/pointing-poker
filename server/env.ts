@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { NEEDS_POINTING_LABEL } from "../shared/constants.ts";
 
 // A header or query-param name. " " or "X-User-Id " would never match a request, so they
 // are trimmed and a whitespace-only value counts as unset, like a blank one does.
@@ -31,7 +30,6 @@ const schema = z.object({
   // A board name, or a numeric id (the number in .../boards/123). Resolved against Jira at
   // bootstrap, so any non-empty text is accepted here. Needs JIRA_DEFAULT_PROJECT.
   JIRA_DEFAULT_BOARD: z.string().trim().min(1).optional(),
-  JIRA_NEEDS_POINTING_LABEL: z.string().min(1).default(NEEDS_POINTING_LABEL),
   // Comma-separated in the environment; exposed as a trimmed list with empties dropped.
   ALLOWED_ORIGINS: z
     .string()

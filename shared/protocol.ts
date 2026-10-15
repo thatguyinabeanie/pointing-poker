@@ -46,8 +46,6 @@ export interface PlayerView {
 export interface QueueSettings {
   projectKey: string | null;
   boardId: number | null;
-  needsPointingOnly: boolean;
-  clearLabelOnSave: boolean;
 }
 export interface QueueItem {
   key: string;
@@ -118,8 +116,6 @@ export type ServerMessage =
       type: "hello";
       me: { userId: number; username: string };
       deck: Card[];
-      // JIRA_NEEDS_POINTING_LABEL, so the UI names the label this deployment actually uses.
-      needsPointingLabel: string;
     }
   | { type: "state"; snapshot: Snapshot }
   | { type: "error"; id: number; reason: string; message: string }
