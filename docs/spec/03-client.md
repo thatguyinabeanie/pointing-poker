@@ -2,9 +2,11 @@
 
 This document is self-contained. A coding session implementing the `client/` folder of the `pointing-poker` repo should need nothing else. Where it says "reference implementation", it means files that were already written and reviewed and are copied into the repo at `docs/spec/reference/client/src/components/*.tsx` and `docs/spec/reference/client/src/lib/estimate.ts`. Copy them into `client/src/` unchanged unless this document says otherwise. The shared contract lives in `shared/protocol.ts` and `shared/deck.ts` (already written; do not edit them). `Ticket` in `protocol.ts` carries `descriptionHtml`, `comments` (`TicketComment[]`, oldest first), `assignee`, `priority` and `labels` in addition to the summary fields. `shared/constants.ts` also exists and exports `ISSUE_KEY` and `MIN_QUERY_LENGTH`. The reference `QueuePanel.tsx` still has the label switches; the repo version drops them (decision 34).
 
+> **Redesign (10/16/2026).** The header, layout, queue rows, ticket view, bottom bar and players were redesigned. The design is `docs/superpowers/specs/2026-10-16-ui-redesign-design.md` (decision 38). Where this file describes the earlier `TopBar`, three-pane layout, `TicketView`, `TicketComments` pane or `Players`, the sections below now describe the redesigned components instead. The files under `docs/spec/reference/client/` and the mock are the earlier design and are not kept in sync.
+
 ## 1. Scope
 
-The client is one page with no router. It uses the stock MUI 9 theme with only the font family changed to Lato (Roboto fallback). It uses the whole page width: three panes in one row (queue, ticket description, comments) above a single-row sticky bottom bar that holds the participants, the deck and the actions. The target is laptop widths (internal tool, MacBook Pro screens, inside the hosting platform's service report iframe), so the full layout applies from the `lg` breakpoint (1200px) up. There is no phone layout work. Below `lg` the panes and the bar simply stack at full width and nothing should break; that is the whole requirement there. Everything is one shared room: there is no room picker or login screen. The only settings are the shared ticket queue settings (section 2, QueuePanel), which are room state, not per-user preferences. Identity comes from the server (auth proxy headers), so the client never asks who the user is. There are no client tests in v1 (decision, see `08-decision-log.md`). Do not add any dependency beyond what `package.json` already lists: react, react-dom, @mui/material, @mui/icons-material, @emotion/react, @emotion/styled. Do not add a router, state library, or form library.
+The client is one page with no router. It uses the stock MUI 9 theme with only the font family changed to Lato (Roboto fallback). It uses the whole page width: two columns (queue on the left, ticket view on the right) under a slim header and above a single-row sticky bottom bar that holds the players, the deck and the actions. The target is laptop widths (internal tool, MacBook Pro screens, inside the hosting platform's service report iframe), so the full layout applies from the `lg` breakpoint (1200px) up. There is no phone layout work. Below `lg` the panes and the bar simply stack at full width and nothing should break; that is the whole requirement there. Everything is one shared room: there is no room picker or login screen. The only settings are the shared ticket queue settings (section 2, QueuePanel), which are room state, not per-user preferences. Identity comes from the server (auth proxy headers), so the client never asks who the user is. There are no client tests in v1 (decision, see `08-decision-log.md`). Do not add any dependency beyond what `package.json` already lists: react, react-dom, @mui/material, @mui/icons-material, @emotion/react, @emotion/styled. Do not add a router, state library, or form library.
 
 Lint is Biome (`npm run lint` is `biome ci .`): double quotes, 2-space indent, line width 100, React lint domain on. Type check is `tsc --noEmit -p tsconfig.json` (strict, `verbatimModuleSyntax`, `allowImportingTsExtensions`). That means: always `import type` for type-only imports, and always write the `.ts`/`.tsx` extension on relative imports, as the reference files do.
 
@@ -17,31 +19,37 @@ client/src/theme.ts               createTheme with Lato typography (already exis
 client/src/App.tsx                owns useGameSocket, fills the Layout slots, maps UI actions to commands
 client/src/useGameSocket.ts       WebSocket client hook (section 3)
 client/src/lib/estimate.ts        suggestPoints (reference, copy as is)
-client/src/components/TopBar.tsx
-client/src/components/QueuePanel.tsx
-client/src/components/Layout.tsx             pure layout, four slots (new)
-client/src/components/TicketDescription.tsx  key, summary, meta chips, description (replaces TicketPanel.tsx)
-client/src/components/TicketComments.tsx     comments pane (new)
-client/src/components/HtmlBody.tsx           the only dangerouslySetInnerHTML in the client (new)
-client/src/components/ParticipantChips.tsx   compact participant row plus stats (replaces ParticipantList.tsx)
+client/src/components/Header.tsx             slim light header: queue controls, title, status dot and username
+client/src/components/layoutConstants.ts     HEADER_HEIGHT (48), shared by Header and Layout
+client/src/components/QueueControls.tsx      Project and Board selects and Refresh (moved out of QueuePanel)
+client/src/components/QueuePanel.tsx         search, queue sections, two-line clickable rows
+client/src/components/Layout.tsx             pure layout, three slots: left, main, bottom
+client/src/components/TicketView.tsx         empty-state guide, or ticket header plus Description and Comments tabs
+client/src/components/TicketComments.tsx     comments list, rendered inside TicketView
+client/src/components/HtmlBody.tsx           the only dangerouslySetInnerHTML in the client
+client/src/components/Players.tsx            avatars holding cards, voted count and stats
 client/src/components/Deck.tsx
 client/src/components/ActionBar.tsx
 client/src/components/ErrorSnackbar.tsx
 ```
 
-Files to author from scratch: `App.tsx` and `useGameSocket.ts`. `index.html`, `main.tsx` and `theme.ts` already exist in the scaffold; `main.tsx` needs only the `<App />` swap. The nine components, `HtmlBody.tsx` and `estimate.ts` come from the reference folder. `TicketPanel.tsx` and `ParticipantList.tsx` no longer exist; do not create them. Reading the reference files is the fastest route; the summaries below are the contract each one must keep. Do not rename props.
+`TopBar.tsx`, `TicketDescription.tsx` and `ParticipantChips.tsx` were deleted by the redesign. Files to author from scratch: `App.tsx` and `useGameSocket.ts`. `index.html`, `main.tsx` and `theme.ts` already exist in the scaffold; `main.tsx` needs only the `<App />` swap. The nine components, `HtmlBody.tsx` and `estimate.ts` come from the reference folder. `TicketPanel.tsx` and `ParticipantList.tsx` no longer exist; do not create them. Reading the reference files is the fastest route; the summaries below are the contract each one must keep. Do not rename props.
 
 ### lib/estimate.ts
 
 `suggestPoints(stats: Snapshot["stats"], deck: readonly string[]): string | null`. Returns null when `stats` is null. Otherwise it scans `stats.counts` and picks the numeric card with the highest count. A card is eligible only if `isNumericCard(card)`, `deck.includes(card)` and `count > 0`. So `?` and the coffee card are never suggested, and counts for cards that are not in the deck passed in are ignored. On a tie the numerically higher card wins ("when the room is split, the cautious estimate is the bigger one"). Returns null when no eligible card exists. Returns a string (a card), not a number.
 
-### components/TopBar.tsx
+### components/Header.tsx
 
-Props: `{ connected: boolean; meName?: string }`. MUI: `AppBar position="static"` > `Toolbar sx={{ gap: 2 }}` > `Typography variant="h6" component="h1"` (text "Pointing Poker", flexGrow 1), a `Chip size="small"` with label "Connected" (color success) or "Reconnecting…" (color warning), and, if `meName` is set, `Typography` "You are {meName}" hidden below the `sm` breakpoint via `sx={{ display: { xs: "none", sm: "block" } }}`. The `h1` lives here; no other component renders an h1.
+Props: `{ connected: boolean; meName?: string; controls?: ReactNode }`. A `Box component="header"` of height `HEADER_HEIGHT` (48, from `layoutConstants.ts`, so `Layout` and `Header` always agree), light grey background and a bottom border, not an `AppBar`. A three-column grid `1fr auto 1fr` keeps the title centered whatever the side widths are. Left: the `controls` slot (App passes `QueueControls`, and passes nothing until the first snapshot). Center: "Pointing Poker" as the page's only `h1`, hidden below `md`. Right: a status dot (green with tooltip "Connected", amber with tooltip and visible text "Reconnecting…" when disconnected) and the viewer's username. Color is never the only signal.
+
+### components/QueueControls.tsx
+
+Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header is a fixed 48px). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads.
 
 ### components/QueuePanel.tsx
 
-Props: `{ settings: QueueSettings; projects: JiraProject[]; boards: JiraBoard[]; queue: QueueState; searchResults: SearchResults | null; currentKey: string | null; disabled: boolean; onChangeSettings: (partial: Partial<QueueSettings>) => void; onRefresh: () => void; onPick: (key: string) => void; onSearch: (query: string) => void }`. `SearchResults` is `{ query: string; items: QueueItem[]; error: string | null; pending: boolean }`, exported from `QueuePanel.tsx` and structurally identical to the hook's `searchResults` value. Types come from `shared/protocol.ts`. The team picks the next ticket from a shared queue of unpointed Jira tickets instead of typing a key. Settings are shared room state: changing one changes the queue for everyone.
+Props: `{ queue: QueueState; searchResults: SearchResults | null; currentKey: string | null; disabled: boolean; onPick: (key: string) => void; onSearch: (query: string) => void; boardUrl: string | null }`. The settings row (Project, Board, Refresh) moved to `QueueControls` in the header, so the rows below that mention it no longer apply to this component. `boardUrl` is computed in `App.tsx` (memoized; the Jira origin comes from the first item's `url`, and the URL needs a project key and a board id) and is the target of the "Open the full board in Jira" link. Rows are two lines (type icon, key link and status badge; then the summary with ellipsis) and the whole row is a button that calls `onPick`; the current ticket's row is highlighted and not clickable (design spec section 3). `SearchResults` is `{ query: string; items: QueueItem[]; error: string | null; pending: boolean }`, exported from `QueuePanel.tsx` and structurally identical to the hook's `searchResults` value. Types come from `shared/protocol.ts`. The team picks the next ticket from a shared queue of unpointed Jira tickets instead of typing a key. Settings are shared room state: changing one changes the queue for everyone.
 
 MUI: `Paper sx={{ p: 2 }}` > `Stack spacing={2}` with these rows, top to bottom:
 
@@ -53,41 +61,38 @@ Rows (queue and search results share one internal `TicketRows` component): `List
 
 ### components/Layout.tsx
 
-Props: `{ left: ReactNode; center: ReactNode; right: ReactNode; bottom: ReactNode }`. Pure layout: no state, no data, no knowledge of the other components. It renders a `Container maxWidth={false}` with `sx={{ px: { xs: 2, lg: 3 } }}` (full width), then a MUI 9 `Grid container spacing={2}` (the Grid2 API: `size` prop, no `item`, imported from `@mui/material/Grid`) with three items, then the bottom bar.
+Props: `{ left: ReactNode; main: ReactNode; bottom: ReactNode }`. Pure layout: no state, no data, no knowledge of the other components. It renders a `Container maxWidth={false}` with `sx={{ px: { xs: 2, lg: 3 } }}` (full width), then a MUI 9 `Grid container spacing={2}` (the Grid2 API: `size` prop, no `item`, imported from `@mui/material/Grid`) with two items, then the bottom bar.
 
 | Slot | Grid item | Content from App |
 |---|---|---|
-| `left` | `size={{ xs: 12, lg: 3 }}` | `QueuePanel` (queue and search) |
-| `center` | `size={{ xs: 12, lg: 5 }}` | `TicketDescription` |
-| `right` | `size={{ xs: 12, lg: 4 }}` | `TicketComments` |
-| `bottom` | outside the Grid, full width | participants, `Deck`, `ActionBar` in one row |
+| `left` | `size={{ xs: 12, lg: 4 }}` | `QueuePanel` (queue and search) |
+| `main` | `size={{ xs: 12, lg: 8 }}` | `TicketView` |
+| `bottom` | outside the Grid, full width | players, `Deck`, `ActionBar` in a three-column grid |
 
-Below `lg` the items are 12 wide in the order Queue, Description, Comments, bottom bar. The bottom bar is a sibling of the Grid inside the Container (visually the full width). It must not be a Grid item: `position: sticky` only works inside a parent taller than the sticky element, and a Grid item holding only the bar is exactly as tall as the bar.
+Below `lg` the items are 12 wide in the order Queue, ticket view, bottom bar. The bottom bar is a sibling of the Grid inside the Container (visually the full width). It must not be a Grid item: `position: sticky` only works inside a parent taller than the sticky element, and a Grid item holding only the bar is exactly as tall as the bar.
 
 Bottom bar (rendered by Layout around the `bottom` slot): a `Paper elevation={4} square` with `p: 1.5`, `mt: "16px"`, `boxSizing: "border-box"`, `position: { xs: "static", lg: "sticky" }`, `bottom: 0`, `zIndex: (theme) => theme.zIndex.appBar` (above pane content, below menus, dialogs and the snackbar), `height: { lg: 88 }` and `overflowY: { lg: "auto" }`. Not sticky and no fixed height below `lg`.
 
-Pane scrolling (lg and up). Each pane's content sits in a `Box component="section"` with an `aria-label` ("Ticket queue", "Ticket description", "Comments") and `sx={{ maxHeight: { lg: PANE_MAX_HEIGHT }, overflowY: { lg: "auto" } }}`. No refs and no measuring: the heights are fixed constants at the top of `Layout.tsx`, in px:
+Pane scrolling (lg and up). Each pane's content sits in a `Box component="section"` with an `aria-label` ("Ticket queue", "Ticket") and `sx={{ maxHeight: { lg: PANE_MAX_HEIGHT }, overflowY: { lg: "auto" } }}`. No refs and no measuring: the heights are fixed constants at the top of `Layout.tsx`, in px:
 
-- `APPBAR_HEIGHT = 64`: the MUI `Toolbar` height at md and up. `TopBar` is `position="static"` and keeps the default Toolbar height.
+- `HEADER_HEIGHT = 48`, imported from `layoutConstants.ts` (the same constant `Header` uses for its own height).
 - `BOTTOM_BAR_HEIGHT = 88`: fixed. The Deck cards are 64px tall (section 2, Deck; the mock uses 48x64) and the bar has 12px padding top and bottom, so one row needs 88px. A shorter bar would clip the cards. If the people section wraps onto a second line the bar scrolls inside itself instead of growing, so the pane math stays correct.
 - `PAGE_TOP_PADDING = 16` (Container `pt`; no bottom padding at lg and up) and `BAR_GAP = 16` (gap between panes and bar).
-- `PANE_MAX_HEIGHT = calc(100vh - 64px - 88px - 32px)`, where the 32px is the two 16px constants. This is the requested `calc(100vh - AppBar - bottom bar)` with the paddings included so the page itself never scrolls.
+- `PANE_MAX_HEIGHT = calc(100vh - 48px - 88px - 32px)`, where the 32px is the two 16px constants. This is the requested `calc(100vh - AppBar - bottom bar)` with the paddings included so the page itself never scrolls.
 
-To keep the sticky bar on the bottom edge when the panes are short, the Container is a flex column with `minHeight: { lg: "calc(100vh - 64px)" }` and the Grid has `flexGrow: 1`. With the AppBar above it the page is exactly one viewport tall at lg and up; only the three panes scroll. Below `lg` panes grow naturally and the page scrolls.
+To keep the sticky bar on the bottom edge when the panes are short, the Container is a flex column with `minHeight: { lg: "calc(100vh - 48px)" }` and the Grid has `flexGrow: 1`. With the header above it the page is exactly one viewport tall at lg and up; only the two panes scroll. Below `lg` panes grow naturally and the page scrolls.
 
-### components/TicketDescription.tsx
+### components/TicketView.tsx
 
-Replaces `TicketPanel.tsx`. Props: `{ ticket: Ticket | null }`. Display only; QueuePanel owns picking and loading. Always renders a `Paper sx={{ p: 2 }}`.
+Props: `{ ticket: Ticket | null }`. Display only; QueuePanel owns picking and loading. Replaces `TicketView`. With no ticket it shows the empty-state guide: "Pick a ticket to start" and three numbered steps (pick a ticket from the queue, everyone picks a card, reveal and save points to Jira). With a ticket it shows a header and two tabs.
 
-- `ticket` is null: a muted `Typography` (`color="text.secondary"`) "Pick a ticket from the queue or search to start pointing."
-- Otherwise a `Stack spacing={2}` with: (1) a header row, a wrapped baseline-aligned `Stack direction="row"`, holding a `Link` (href `ticket.url`, `target="_blank"`, `rel="noopener noreferrer"`, `variant="h6"`) with `ticket.key`, the summary as `Typography variant="h6" component="h2"` (`overflowWrap: "anywhere"`), and an "Open in Jira" `Button variant="outlined" size="small" startIcon={<OpenInNewIcon />} component="a" href={ticket.url} target="_blank" rel="noopener noreferrer"` (import `OpenInNewIcon` from `@mui/icons-material/OpenInNew`). The app never edits ticket text; this button is the way to edit the description or comments in Jira; (2) a wrapped row of small Chips: `issueType`, `status`, `priority` (omitted when null), `assignee ?? "Unassigned"`, `Current: {currentPoints ?? "unset"} pts`, then one `variant="outlined"` Chip per entry of `labels`; (3) a `Divider`; (4) "Description" as `Typography variant="subtitle1" component="h3"` (bold) followed by `<HtmlBody html={descriptionHtml} />`, or a muted "No description" when `descriptionHtml` is null.
+Header: a small line with the issue-type icon, type name, key as a link and an icon link to Jira (both `target="_blank"`, `rel="noopener noreferrer"`; this replaces the "Open in Jira" button, and it is still the way to edit text in Jira since the app never edits tickets); the summary as the `h2`; a "Current points" box on the right (the value, or "–" when unset); and a labeled row (label above value) for Status, Priority, Assignee ("Unassigned" when null) and Labels (omitted when empty).
+
+Tabs: "Description" and "Comments" with a count badge. The selected tab resets to Description when a different ticket loads. The description is `HtmlBody`, or a muted "No description". `TicketComments` renders the Comments tab (below).
 
 ### components/TicketComments.tsx
 
-Props: `{ ticket: Ticket | null }`. Always renders a `Paper sx={{ p: 2 }}`.
-
-- `ticket` is null: a muted `Typography` "Comments appear here once a ticket is loaded."
-- Otherwise `Typography variant="h6" component="h2"` "Comments ({n})", then either a muted "No comments" or a `List disablePadding` with one `ListItem` (`disableGutters`, top border) per comment in array order. The server sends oldest first and the client never sorts. Each item shows the author (`subtitle2`), the date as `<time dateTime={createdAt}>` showing `new Date(createdAt).toLocaleString()` (caption, muted), and `<HtmlBody html={bodyHtml} />`.
+Props: `{ ticket: Ticket | null }`, used inside `TicketView`. A muted "No comments" or a `List` with one item per comment in array order (the server sends oldest first and the client never sorts): initials avatar, author, relative time from `createdAt` inside a `<time dateTime>` with the full date in a tooltip, then `HtmlBody`.
 
 ### components/HtmlBody.tsx and the safety rule
 
@@ -95,13 +100,9 @@ Props: `{ html: string }`. A `Box` with `dangerouslySetInnerHTML={{ __html: html
 
 `descriptionHtml` and each comment's `bodyHtml` are sanitized on the server before they are sent: allowlisted tags only, no scripts or styles, images replaced by links, links already carrying `target` and `rel`. The client renders them with `dangerouslySetInnerHTML`, and that is safe only because of the server sanitizer. Two rules follow. First, `HtmlBody` is the only place in the client allowed to use `dangerouslySetInnerHTML`, and it carries `// biome-ignore lint/security/noDangerouslySetInnerHtml: server-sanitized HTML only; see spec 03 section 2`. Second, no other HTML source may be rendered this way: not Jira summaries, labels, usernames, queue items, search results or error messages. Those stay plain React text, which React escapes. The client does no sanitizing of its own, so a bug in the server sanitizer is a client XSS bug; do not add a client-side sanitizer dependency to paper over it.
 
-### components/ParticipantChips.tsx
+### components/Players.tsx
 
-Replaces `ParticipantList.tsx`. Props: `{ players: PlayerView[]; phase: Phase; meId: number | null; stats: Snapshot["stats"] }`. It is the left section of the bottom bar. MUI: an outer `Stack direction="row" useFlexGap spacing={2}` (items centered) holding (1) the people and (2) the stats.
-
-People: a `Stack component="ul" direction="row" useFlexGap spacing={0.5}` with `aria-label="Participants"`, `flexWrap: "wrap"`, `flex: "1 1 auto"`, `minWidth: 0` and list styling reset. This section shrinks and wraps first when the bar is crowded. One `Box component="li"` per player (key `userId`, `opacity: p.connected ? 1 : 0.5`) holding a `Chip size="small" variant="outlined"` with an `Avatar` (first letter of username, uppercased) and a label: `{username} (you)` when `userId === meId`, else the username. Phase rules, chosen by `phase` and never by `p.vote` (the UI must never show a vote before reveal even if a stale snapshot carries one): when `phase === "revealed"` the label is `{name}: {vote ?? "–"}` (en dash for no vote) and there is no icon; otherwise the chip icon is a green `CheckCircle` with `aria-label="voted"` if `p.hasVoted`, else a gray `HourglassEmpty` with `aria-label="not voted"`. Not connected: label gets " (offline)" appended in addition to the dimming.
-
-Stats: rendered inline after the people only when `phase === "revealed" && stats`, as a `Stack direction="row" useFlexGap spacing={0.5}` with `flexShrink: 0`: a `Typography variant="body2"` "Avg {stats.average ?? "–"}", one small Chip `{card} ×{n}` per entry of `stats.counts`, and an outlined small Chip "Consensus" (`color="success"`) or "No consensus" (default color) from `stats.consensus`. The text says it, so consensus is not conveyed by color alone.
+Props: `{ players: PlayerView[]; phase: Phase; meId: number | null; stats: Snapshot["stats"] }`. Replaces `Players`. It is the left cell of the bottom bar and wraps inside that cell, so it never moves the deck. Each player is an initials avatar with a small card tucked behind its top-right corner and the username below (ellipsis when long). Card state is chosen by `phase` and never by `p.vote` before reveal: waiting is a dashed outline, voted is face-down, revealed is face-up with the value. After reveal, when numeric votes differ, the highest and lowest render in amber (outlier, always with the value as text). The viewer gets a ring and a bold name; offline players are faded with no card. The avatar carries the full username as its accessible name, and the list is a `ul` labeled "Participants". Beside the players: "X of Y voted" during voting (Y counts connected players) and, after reveal, the average and range, plus the consensus text.
 
 ### components/Deck.tsx
 
@@ -109,7 +110,7 @@ Props: `{ deck: readonly string[]; selected: string | null; disabled: boolean; o
 
 ### components/ActionBar.tsx
 
-Props: `{ phase: Phase; round: number; stats: Snapshot["stats"]; ticket: Ticket | null; deck: readonly string[]; disabled: boolean; jiraSave: JiraSave; onReveal: () => void; onReset: (opts: { clearTicket: boolean }) => void; onSave: (points: number) => void }`. It is the right section of the bottom bar. It shows no stats (those are in `ParticipantChips`); `stats` is kept only to preset the select.
+Props: `{ phase: Phase; round: number; stats: Snapshot["stats"]; ticket: Ticket | null; deck: readonly string[]; disabled: boolean; jiraSave: JiraSave; onReveal: () => void; onReset: (opts: { clearTicket: boolean }) => void; onSave: (points: number) => void }`. It is the right section of the bottom bar. It shows no stats (those are in `Players`); `stats` is kept only to preset the select.
 
 MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center" }}`, a single row at every width, holding the controls for the current phase in this order:
 
@@ -187,7 +188,7 @@ Search (`search(query)`): `useCallback` with an empty dependency list. It trims 
 
 ```
 <>
-  <TopBar connected={connected} meName={me?.username} />
+  <Header connected={connected} meName={me?.username} controls={snapshot ? <QueueControls ... /> : undefined} />
   ...content...
   <ErrorSnackbar error={notice} />
 </>
@@ -197,16 +198,15 @@ Content states, in priority order:
 
 1. If `disconnectedReason` is non-null: render only an `Alert severity="warning"` inside `<Container maxWidth="md" sx={{ py: 2 }}>`. For `"unauthenticated"` the text is "Open this app inside the hosting platform" followed by a sentence that sign-in is handled by the platform and this page cannot identify you on its own. For `"bad_origin"` the text is "This page was opened from an address the server does not accept" with a hint to contact the service owner. Do not render the board.
 2. Else if `snapshot === null`: centered `CircularProgress` (inside a `Box` with `display: "flex"`, `justifyContent: "center"`, `py: 6`). Give it `aria-label="Loading"`.
-3. Else the board: `<Layout left={...} center={...} right={...} bottom={...} />`. Layout renders its own full-width Container, so App adds none around it. The full page order is TopBar, then Layout (three panes, then the bottom bar). Slots:
+3. Else the board: `<Layout left={...} main={...} bottom={...} />`. Layout renders its own full-width Container, so App adds none around it. The full page order is Header, then Layout (two panes, then the bottom bar). Slots:
 
 | Slot | Content |
 |---|---|
 | `left` | `<QueuePanel ... />` |
-| `center` | `<TicketDescription ticket={snapshot.ticket} />` |
-| `right` | `<TicketComments ticket={snapshot.ticket} />` |
-| `bottom` | `<Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ alignItems: { lg: "center" } }}>` holding `<Box sx={{ flex: { lg: "1 1 0" }, minWidth: 0 }}><ParticipantChips ... /></Box>`, `<Box sx={{ flexShrink: { lg: 0 } }}><Deck ... /></Box>` and `<Box sx={{ flexShrink: { lg: 0 } }}><ActionBar ... /></Box>` |
+| `main` | `<TicketView ticket={snapshot.ticket} />` |
+| `bottom` | a `Box` with `display: "grid"` and `gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" }` holding `<Box sx={{ minWidth: 0 }}><Players ... /></Box>`, `<Deck ... />` and `<Box sx={{ justifySelf: { lg: "end" } }}><ActionBar ... /></Box>` |
 
-The bottom bar is one row at `lg` and up: people left (it wraps first), Deck in the middle, actions right. Below `lg` the three stack in that order.
+The bottom bar is a grid `1fr auto 1fr` at `lg` and up: Players left (`minWidth: 0`, so a long list wraps inside its cell), Deck centered, ActionBar right (`justifySelf: "end"`). Below `lg` the three stack in that order.
 
 Derived values:
 
@@ -218,12 +218,12 @@ Props per component:
 
 | Component | Props |
 |---|---|
-| TopBar | `connected`, `meName={me?.username}` |
-| QueuePanel | `settings={snapshot.queueSettings}`, `projects={snapshot.projects}`, `boards={snapshot.boards}`, `queue={snapshot.queue}`, `searchResults` (from the hook), `currentKey={snapshot.ticket?.key ?? null}`, `disabled`, `onChangeSettings={(settings) => dispatch({ type: "setQueueSettings", settings })}`, `onRefresh={() => dispatch({ type: "refreshQueue" })}`, `onPick={(key) => dispatch({ type: "loadTicket", key })}`, `onSearch={search}` |
-| TicketDescription | `ticket={snapshot.ticket}` |
-| TicketComments | `ticket={snapshot.ticket}` |
-| ParticipantChips | `players={snapshot.players}`, `phase={snapshot.phase}`, `meId={me?.userId ?? null}`, `stats={snapshot.stats}` |
-| Layout | `left`, `center`, `right`, `bottom` as in the slot table above |
+| Header | `connected`, `meName={me?.username}`, `controls` (QueueControls once a snapshot exists) |
+| QueueControls | `settings={snapshot.queueSettings}`, `projects`, `boards`, `disabled`, `refreshing={snapshot.queue.loading}`, `onChangeSettings`, `onRefresh` |
+| QueuePanel | `queue={snapshot.queue}`, `searchResults` (from the hook), `currentKey={snapshot.ticket?.key ?? null}`, `disabled`, `onPick`, `onSearch={search}`, `boardUrl` |
+| TicketView | `ticket={snapshot.ticket}` |
+| Players | `players={snapshot.players}`, `phase={snapshot.phase}`, `meId={me?.userId ?? null}`, `stats={snapshot.stats}` |
+| Layout | `left`, `main`, `bottom` as in the slot table above |
 | Deck | `deck={DECK}`, `selected`, `disabled`, `onSelect`, `onClear` |
 | ActionBar | `phase`, `round`, `stats`, `ticket` from snapshot, `deck={DECK}`, `disabled`, `jiraSave={snapshot.jiraSave}`, `onReveal`, `onReset`, `onSave` |
 
@@ -262,14 +262,14 @@ Notice handling. `dispatch` calls `send(cmd)`; if it returns false, App shows a 
 
 ## 7. UI states
 
-The visual reference is the mock at `docs/spec/mocks/pointing-poker.html`. The mock reflects the three-pane layout (LAYOUT C) and the bottom bar; section 2 (Layout.tsx) and section 4 are the source of truth for page structure. Open it in a browser to compare layout and spacing; the components above are the source of truth for behavior where the mock differs.
+The visual reference is the mock at `docs/spec/mocks/pointing-poker.html`. The mock reflects the earlier three-pane layout (LAYOUT C) and is not kept in sync with the redesign; section 2 (Layout.tsx) and section 4 are the source of truth for page structure. Open it in a browser to compare layout and spacing; the components above are the source of truth for behavior where the mock differs.
 
-In every state where a ticket is loaded, TicketDescription shows an "Open in Jira" button beside the key and summary. Clicking it opens `ticket.url` in a new tab; it never changes room state and is not disabled while offline.
+In every state where a ticket is loaded, TicketView shows an icon link to Jira beside the key. Clicking it opens `ticket.url` in a new tab; it never changes room state and is not disabled while offline.
 
-| State | TopBar chip | QueuePanel (left), TicketDescription (center), TicketComments (right) | ParticipantChips (bottom bar, left) | Deck (bottom bar, middle) | ActionBar (bottom bar, right) |
+| State | Header status | QueuePanel (left), TicketView (right) | Players (bottom bar, left) | Deck (bottom bar, middle) | ActionBar (bottom bar, right) |
 |---|---|---|---|---|---|
 | Loading (no snapshot yet) | Reconnecting… | not shown, spinner instead | not shown | not shown | not shown |
-| Idle (no round) | Connected | Queue enabled, TicketDescription shows "Pick a ticket from the queue or search to start pointing.", TicketComments shows its placeholder | Players, hourglass icons | Disabled | Only "Start round" |
+| Idle (no round) | Connected | Queue enabled, TicketView shows the "Pick a ticket to start" guide | Players, hourglass icons | Disabled | Only "Start round" |
 | Voting, empty | Connected | Queue, description and comments filled if a ticket is loaded | All hourglass | Enabled, nothing pressed | Reveal and "Reset" |
 | Voting, partial | Connected | same | Voted players green check, others hourglass; no values shown | Own card pressed (contained) | Reveal and "Reset" (partial reveal is allowed) |
 | Revealed | Connected | same | Each chip shows the vote ("–" for none); inline stats: Avg, count chips, Consensus or No consensus | Disabled, own card still pressed | Story points select preset to suggestion, Save to Jira (enabled if ticket and points), "Next ticket"; no Reveal |
@@ -286,7 +286,7 @@ In every state where a ticket is loaded, TicketDescription shows an "Open in Jir
 | Queue error | Connected | Inline warning alert with the error text; settings and Refresh stay usable | unchanged | unchanged | unchanged |
 | Search pending, empty, or error | Connected | Progress bar, "No matches", or inline warning under the search box; the queue below is unaffected | unchanged | unchanged | unchanged |
 
-In the Disconnected state the TopBar chip shows "Reconnecting…" even for terminal failures; this is accepted and the alert beneath it explains the cause.
+In the Disconnected state the Header status shows "Reconnecting…" even for terminal failures; this is accepted and the alert beneath it explains the cause.
 
 ## 8. Accessibility and responsive rules
 
@@ -296,11 +296,11 @@ Accessibility checklist (all already satisfied by the reference components; do n
 - Icon-only status indicators have `aria-label` ("voted", "not voted"); the vote state is never conveyed by color alone (check versus hourglass icons).
 - The queue Selects have visible labels linked with `InputLabel` and `labelId`; the Refresh icon button has `aria-label="Refresh queue"`; the search `TextField` has a visible label ("Search tickets (key or text)"); the progress bars have accessible labels.
 - Every interactive element is a native `button`, `input` or `a`, so Tab and Enter and Space work with no extra code. Do not add click handlers to non-interactive elements.
-- Heading hierarchy: exactly one `h1` (in TopBar); the ticket summary and "Comments (n)" are `h2`; "Description" is `h3` under the summary. Headings inside server HTML are styled at body size by `HtmlBody` (the sanitizer allowlist decides whether they appear at all).
-- Each pane is a `section` with an `aria-label` ("Ticket queue", "Ticket description", "Comments"), and the participant chips are a `ul` labeled "Participants", so screen reader users can jump between them.
+- Heading hierarchy: exactly one `h1` (in Header); the ticket summary and "Comments (n)" are `h2`; "Description" is `h3` under the summary. Headings inside server HTML are styled at body size by `HtmlBody` (the sanitizer allowlist decides whether they appear at all).
+- Each pane is a `section` with an `aria-label` ("Ticket queue", "Ticket"), and the participant chips are a `ul` labeled "Participants", so screen reader users can jump between them.
 - Comments are a real list (`List` renders `ul` with `li` items), so the count is announced. Each date is a `<time>` element with `dateTime`.
 - Keyboard and the sticky bar: the bar is last in DOM order and every control in it is a native button or select, so Tab reaches it after the panes. Sticky positioning never covers a focused element in a pane, because the pane `maxHeight` stops above the bar, and the browser scrolls a focused element into view inside its pane. Do not add `tabIndex` to the panes. The participant chips are not interactive and are not tab stops.
-- The page has exactly one `h1` (in TopBar). Ticket key links (in TicketDescription, the queue and the search results) are the only external links and use `rel="noopener noreferrer"`.
+- The page has exactly one `h1` (in Header). Ticket key links (in TicketView, the queue and the search results) are the only external links and use `rel="noopener noreferrer"`.
 - The loading spinner has an accessible label. The snackbar's `Alert` has the implicit `role="alert"` so errors are announced.
 - Text contrast comes from the stock MUI theme; do not lower opacity on text other than the offline player rows.
 
