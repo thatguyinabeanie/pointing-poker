@@ -245,7 +245,7 @@ Command mapping, all through one helper `dispatch(cmd: ClientCommand)`:
 | Reset (phase `voting`) / Start round (phase `idle`) | `{ type: "reset" }` |
 | Queue row or search result click | `{ type: "loadTicket", key }` (the key comes from a server-provided item, so no trimming or case change is needed) |
 | Change a queue setting | `{ type: "setQueueSettings", settings }` (only the changed fields) |
-| Refresh queue | `{ type: "refreshQueue" }` |
+| Refresh queue | `{ type: "refreshQueue" }`, then always `{ type: "refreshProjects" }` (the server retries projects and boards, which can fail independently) |
 | Type in the search box | Not through `dispatch`: App passes the hook's `search` as `onSearch`, which sends `{ type: "searchTickets", query }` after a 400 ms debounce |
 | Save to Jira | `{ type: "saveEstimate", points }` |
 
