@@ -110,7 +110,7 @@ export function ActionBar({
   );
 
   // One row, controls chosen by phase: voting shows Reveal and Reset; revealed shows the
-  // points select, Save and Next ticket; idle shows Start round. Stats live in ParticipantChips.
+  // points select, Save and Next ticket; idle shows Start round. Stats live in Players.
   return (
     <Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center" }}>
       {phase === "voting" && (
