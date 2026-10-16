@@ -111,8 +111,10 @@ export function ActionBar({
 
   // One row, controls chosen by phase: voting shows Reveal and Reset; revealed shows the
   // points select, Save and Next ticket; idle shows Start round. Stats live in Players.
+  // Wraps so the select, buttons and the save alert stay on screen below lg, where the bar is
+  // not a wide grid cell.
   return (
-    <Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center" }}>
+    <Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
       {phase === "voting" && (
         <Button variant="contained" disabled={disabled} onClick={onReveal}>
           Reveal
