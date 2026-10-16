@@ -50,7 +50,11 @@ export function QueueControls({
   // Single row, no wrap: the header is a fixed 48px tall, so a second line would be clipped.
   return (
     <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
-      <FormControl size="small" sx={{ minWidth: 140, maxWidth: 220 }} disabled={disabled}>
+      <FormControl
+        size="small"
+        sx={{ minWidth: { xs: 110, sm: 140 }, maxWidth: 220 }}
+        disabled={disabled}
+      >
         <InputLabel id={projectLabelId}>Project</InputLabel>
         <Select
           labelId={projectLabelId}
@@ -67,7 +71,7 @@ export function QueueControls({
       </FormControl>
       <FormControl
         size="small"
-        sx={{ minWidth: 140, maxWidth: 220 }}
+        sx={{ minWidth: { xs: 110, sm: 140 }, maxWidth: 220 }}
         disabled={disabled || boards.length === 0}
       >
         <InputLabel id={boardLabelId}>Board</InputLabel>

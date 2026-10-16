@@ -2,9 +2,7 @@ import Box from "@mui/material/Box";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import type { ReactNode } from "react";
-
-// Layout reserves this much vertical space for the header, so the two must agree.
-export const HEADER_HEIGHT = 48;
+import { HEADER_HEIGHT } from "./layoutConstants.ts";
 
 interface Props {
   connected: boolean;
