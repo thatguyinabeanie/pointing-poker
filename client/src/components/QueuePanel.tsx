@@ -50,6 +50,7 @@ function writeQuery(text: string): void {
 }
 
 interface Props {
+  boardUrl: string | null;
   queue: QueueState;
   searchResults: SearchResults | null;
   currentKey: string | null;
@@ -59,6 +60,7 @@ interface Props {
 }
 
 export function QueuePanel({
+  boardUrl,
   queue,
   searchResults,
   currentKey,
@@ -156,6 +158,7 @@ export function QueuePanel({
           <Stack spacing={1}>
             {queue.sections.map((section) => (
               <QueueSectionBlock
+                boardUrl={boardUrl}
                 key={section.id}
                 section={section}
                 isCollapsed={collapsed.includes(section.id)}
@@ -173,6 +176,7 @@ export function QueuePanel({
 }
 
 interface SectionProps {
+  boardUrl: string | null;
   section: QueueSection;
   isCollapsed: boolean;
   currentKey: string | null;
@@ -182,6 +186,7 @@ interface SectionProps {
 }
 
 function QueueSectionBlock({
+  boardUrl,
   section,
   isCollapsed,
   currentKey,
@@ -229,7 +234,16 @@ function QueueSectionBlock({
         </Typography>
       </ButtonBase>
       <Collapse in={!isCollapsed}>
-        <div id={bodyId}>{rows}</div>
+        <div id={bodyId}>
+          {rows}
+          {isPartial && boardUrl !== null ? (
+            <Typography variant="body2" sx={{ py: 0.5, px: 2 }}>
+              <Link href={boardUrl} target="_blank" rel="noopener noreferrer">
+                Open the full board in Jira
+              </Link>
+            </Typography>
+          ) : null}
+        </div>
       </Collapse>
     </div>
   );
