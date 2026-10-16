@@ -91,22 +91,20 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
   `server/routes/health.ts`, `server/routes/spa.ts`, `server/heartbeat.ts`, `server/ws.ts`,
   `server/app.ts`, `server/index.ts`, `server/sanitize.ts`.
 - **Queue work (server):**
-  - `server/env.ts` reads `JIRA_DEFAULT_PROJECT` (no default) and `JIRA_NEEDS_POINTING_LABEL`
-    (default `needs-pointing`). `shared/constants.ts` (from the reference) holds the label default.
+  - `server/env.ts` reads `JIRA_DEFAULT_PROJECT` (no default).
   - `server/jira.ts` gains: project search (`GET /rest/api/3/project/search`), boards for a project
     (`GET /rest/agile/1.0/board?projectKeyOrId=`), the board's filter id
     (`GET /rest/agile/1.0/board/{id}/configuration`), the queue search (`POST /rest/api/3/search/jql`,
-    first 50), label removal (`PUT /rest/api/3/issue/{key}` with `update.labels remove`), and the ticket search
+    first 50), and the ticket search
     (`POST /rest/api/3/search/jql`, exact key match or `text ~ "query*"`, top 10).
-  - Queue JQL: `project = X AND statusCategory != Done AND "Story Points" is EMPTY`, plus
-    `AND labels = needs-pointing` when the switch is on, plus `AND filter = <board filter id>` when a
-    board is set, then `ORDER BY Rank ASC`.
+  - Queue JQL: `project = X AND statusCategory != Done AND "Story Points" is EMPTY` (or
+    `cf[NNNNN]` when the field id is known), then `ORDER BY Rank ASC`. With a board set, the
+    Agile API applies the board's filter instead (decision 32). No label filter (decision 34).
   - `server/game.ts` stores the queue settings, the boards, the projects, and the queue. It stays
     pure: `ws.ts` fetches the data and hands it in.
   - `server/ws.ts` dispatches `setQueueSettings`, `refreshQueue`, `refreshProjects`, and
     `searchTickets`. Search results go back only to the sender, as `searchResults`. A project
-    change reloads boards and the queue. After a successful save, with Clear label on save on, it
-    removes the label and then refreshes the queue.
+    change reloads boards and the queue. After a successful save it refreshes the queue.
 - **Ticket detail (server):**
   - `shared/protocol.ts`: `Ticket` gains `description` (sanitized HTML), `comments` (up to 50,
     oldest first), `assignee`, `priority`, and `labels`.
@@ -194,9 +192,8 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
 
 - **Goal:** The full round works with two people, against real Jira.
 - **Files touched:** None, unless a bug is found.
-- **Inputs needed from the user first:** a real Jira ticket key to read, a throwaway ticket
-  for the Story Points write, and a throwaway ticket with the `needs-pointing` label for the
-  queue checks. Ask before writing to Jira. The user fills in `.env` on their own
+- **Inputs needed from the user first:** a real Jira ticket key to read, a throwaway unpointed ticket
+  for the Story Points write and the queue checks. Ask before writing to Jira. The user fills in `.env` on their own
   machine. The build session must not read `.env`.
 - **Subagent:** None. Run in the main session with the user.
 - **Parallel:** Step 5 can run alongside this step.
@@ -211,17 +208,15 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
   - [ ] Queue checks (two players, real Jira):
     - [ ] Alice and Bob see the same queue, in the same order.
     - [ ] Changing the project reloads the board list and the queue.
-    - [ ] Turning the needs-pointing switch on or off changes the queue list.
+    - [ ] Every queued ticket is not Done and has no Story Points, in any To Do status.
     - [ ] Picking a ticket from the queue loads it for both windows.
-    - [ ] Saving removes the ticket from the queue, and removes the `needs-pointing` label from
-          the ticket in Jira.
+    - [ ] Saving removes the ticket from the queue. Its labels in Jira are unchanged.
 
 ## Step 5: Docker image smoke
 
 - **Goal:** The production image starts, serves the app, and reads identity from headers.
 - **Files touched:** `Dockerfile` (new), `.dockerignore` (exists, check it), `.gitignore` (add
-  `/dist`), `docs/spec/env-example.txt` (names only, including `JIRA_DEFAULT_PROJECT` and
-  `JIRA_NEEDS_POINTING_LABEL`). The user copies it to `.env.example`.
+  `/dist`), `docs/spec/env-example.txt` (names only, including `JIRA_DEFAULT_PROJECT`). The user copies it to `.env.example`.
 - **Spec sections:** `04-infra.md` (Dockerfile stages, `.dockerignore`, `.env.example`). Until
   that file exists, the planning document's Dockerfile notes apply. `06-templates.md` for the
   template survey.
@@ -263,13 +258,13 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
 
 ## Step 7: create a feature branch and open a draft PR
 
-- **Goal:** The repo `thatguyinabeanie/pointing-poker` already exists (private, personal space) and `main` is pushed. Create a feature branch and open a draft PR.
+- **Goal:** The repo `thatguyinabeanie/pointing-poker` already exists (public, personal space) and `main` is pushed. Create a feature branch and open a draft PR.
 - **Files touched:** None.
-- **Visibility:** private (decided).
+- **Visibility:** public (changed from private, see decision 29 in `08-decision-log.md`).
 - **Subagent:** None. Run in the main session.
 - **Parallel:** No.
 - **Acceptance:**
-  - [ ] `gh repo view thatguyinabeanie/pointing-poker --json visibility,url` shows `PRIVATE`.
+  - [ ] `gh repo view thatguyinabeanie/pointing-poker --json visibility,url` shows `PUBLIC`.
   - [ ] `git log --oneline -5` on `main` matches the local history.
   - [ ] `gh pr view --json isDraft,labels` shows `isDraft: true` and the label `> 90% ai generated`.
   - [ ] PR body is current and ends with the attribution line the session requires.
@@ -290,8 +285,8 @@ The build session prepares this list. The user does the steps in the hosting pla
 - [ ] One tab left idle for 90s keeps its socket.
 - [ ] WebSocket Origin check passes behind the auth proxy. If not, `ALLOWED_ORIGINS` is set.
 - [ ] Assets load at the service root. `base` changes only if the platform uses a path prefix.
-- [ ] Add the `needs-pointing` label to 3 real tickets in Jira. Confirm all 3 appear in the
-      queue with the switch on.
+- [ ] Pick 3 real unpointed tickets that are not Done (at least one in Backlog). Confirm all 3
+      appear in the queue.
 
 ## Definition of done
 
@@ -320,14 +315,13 @@ Taken from the planning document's step 0 assumptions and its Jira notes.
 | Jira write permissions | The planning document has no separate Jira permission note. Write-back uses the same token as reads, and the plan does not say whether that token can edit Story Points on every issue type | `02-server.md` section 10 covers 401 and 403 on load and 400 `field_not_editable` on save. Test on a throwaway ticket first |
 | Story Points field lookup | The field name may differ or be missing | `JIRA_STORY_POINTS_FIELD` overrides the lookup. The plan says Story Points exists in the team's main project |
 | Dev identity override | `?devUser=` must never work in production | Gated on `NODE_ENV` and `ALLOW_DEV_USER`. The Docker image sets `NODE_ENV=production` |
-| Jira token for boards and labels | The queue reads projects and boards through the Agile API, and removes labels through the issue API. The token needs browse on projects and boards, and edit on issues (labels and Story Points) | Board calls fail with 401 or 403: the board list stays empty, and the project-only queue still works. Label removal fails: Story Points is still saved, but the ticket stays in the queue until someone removes the label |
-| Label adoption | No ticket has `needs-pointing` yet. With the switch on, the queue is empty. The team's main project has 2,175 open unpointed tickets today | The team adds the label to the tickets it wants in the queue, or turns the switch off and scopes by board. Decide before launch |
+| Jira token for boards | The queue reads projects and boards through the Agile API. The token needs browse on projects and boards, and edit on issues (Story Points) | Board calls fail with 401 or 403: the board list stays empty, and the project-only queue still works |
 
 ## Resolved questions
 
 The planning document left these open. They are decided, and the steps above reflect them.
 
-1. **Repo visibility:** private, in the personal GitHub space (`thatguyinabeanie/pointing-poker`).
+1. **Repo visibility:** public (originally private; see `08-decision-log.md`), in the personal GitHub space (`thatguyinabeanie/pointing-poker`).
 2. **Repo creation order:** the repo already exists, so no `gh repo create` runs. Step 7 creates a feature branch and a draft PR after steps 0 to 6.
 3. **CI test step:** none. The build has no tests, so CI has no `test` step, and the `npm test`
    gate in CLAUDE.md is dropped (`02-server.md` sections 1 and 13).

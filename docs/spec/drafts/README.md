@@ -7,7 +7,7 @@ as a service on the hosting platform, and it has one shared room per deployed in
 
 ## Running locally
 
-1. Copy `.env.example` to `.env` and fill in the values. Set `ALLOW_DEV_USER=1` so the
+1. Copy `docs/spec/env-example.txt` to `.env` (`cp docs/spec/env-example.txt .env`) and fill in the values. Set `ALLOW_DEV_USER=1` so the
    `?devUser=` shortcut works.
 2. Install dependencies with `npm install`.
 3. Start the app with `npm run dev`.

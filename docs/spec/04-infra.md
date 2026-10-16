@@ -1,6 +1,6 @@
 # Pointing Poker: infrastructure spec
 
-Audience: the build session finishing the scaffold, and whoever sets up the platform service and GitHub Actions. The repo at `/Users/gmendoza/source/pointing-poker` (commit `5665462`) is the source of truth for file contents. "Verified" means the scaffold spike, run October 15, 2026.
+Audience: the build session finishing the scaffold, and whoever sets up the platform service and GitHub Actions. The repo at `~/source/pointing-poker` (commit `5665462`) is the source of truth for file contents. "Verified" means the scaffold spike, run October 15, 2026.
 
 ## 1. Toolchain
 
@@ -236,7 +236,7 @@ CMD ["node", "server/index.ts"]
 
 `.github/workflows/ci.yml` has two jobs. `checks` runs on every push and pull request: checkout, `jdx/mise-action` (Node 26 and npm 12 from `mise.toml`), `npm ci`, `npm run lint`, `npm run tsc:check`, `npm run build`, then `npm audit --omit=dev --audit-level=high`. Each gate after install runs with `if: ${{ !cancelled() }}`, so one run reports every failure. The audit uses `--omit=dev` on purpose: the lint toolchain drags in advisories that never reach a deployed container, and failing on those trains people to ignore the gate.
 
-`publish` needs `checks` and runs only on a push to `main`. Actions are pinned to major tags (`actions/checkout@v7`, `jdx/mise-action@v5`, `docker/*@v4/v6/v7`). The workflow has `permissions: contents: read` and a concurrency group that cancels an older run on the same ref.
+`publish` needs `checks` and runs on every branch push (`startsWith(github.ref, 'refs/heads/')`), never on pull requests or tag pushes. Skipping pull requests keeps the Docker Hub secrets away from fork PRs. Actions are pinned to major tags (`actions/checkout@v7`, `jdx/mise-action@v5`, `docker/*@v4/v6/v7`). The workflow has `permissions: contents: read` and a concurrency group that cancels an older run on the same ref.
 
 No test step (no tests by decision).
 
@@ -253,7 +253,7 @@ Three scripts in `scripts/` (also `npm run image:build`, `image:push`, `image:ru
 
 Open point: the platform service must be able to pull the image. A private Docker Hub repo needs registry credentials on the Platform side, or the repo must be public. Confirm with the Platform admins before the first deploy. The console also keeps an allowlist of public images in `data/public_images`, so check whether that applies.
 
-Merges to `main` publish `:<short-sha>` and `:latest` to Docker Hub from the `publish` job in `.github/workflows/ci.yml` (linux/amd64, on GitHub's amd64 runners). The scripts remain for local builds and smoke tests.
+Every branch push publishes `:<short-sha>`, `:<branch>` (sanitized, `build/v1` becomes `build-v1`) and `:<branch>-<run-number>` (for example `build-v1-57`, a fixed tag per CI run) to Docker Hub from the `publish` job in `.github/workflows/ci.yml` (linux/amd64, on GitHub's amd64 runners), so a branch can be tried on the platform. Merges to `main` also publish `:latest` (`enable={{is_default_branch}}`), so a branch push never overwrites what is deployed (decision 37). The scripts remain for local builds and smoke tests.
 
 Setup the user does outside the repo:
 
@@ -278,9 +278,8 @@ Set these on the platform service. The first rows come from the draft `docs/spec
 | `JIRA_STORY_POINTS_FIELD` | Optional | Unset: found through the Jira field list. |
 | `LOG_LEVEL` | Optional, default `info` | `debug` for more detail. |
 | `JIRA_DEFAULT_PROJECT` | Optional, no default | Seeds the queue's project. |
-| `JIRA_NEEDS_POINTING_LABEL` | Optional, default `needs-pointing` | Queue filter, and the label removed after a save. |
 | `ALLOWED_ORIGINS` | Optional | Only if the WebSocket Origin check fails behind the auth proxy. |
-| `IDENTITY_USER_ID_HEADER`, `IDENTITY_USERNAME_HEADER` | Set to the header names the auth proxy injects | No defaults in the repo. Unset in production means unauthenticated: `/ws` closes with 4401. |
+| `IDENTITY_USER_ID_HEADER`, `IDENTITY_USERNAME_HEADER` | Set to the header names the auth proxy injects | No defaults in the repo. Unset in production means unauthenticated: `/ws` closes with 4401. Production logs one startup warning naming both variables (no values) when they are not both set. |
 
 Do not set `ALLOW_DEV_USER` or `DEV_USER_ID` and `DEV_USERNAME` in production. The image sets `NODE_ENV=production`, which disables them anyway.
 
@@ -306,7 +305,7 @@ Spike run, October 15, 2026, commit `5665462`. `npm run lint`, `npm run tsc:chec
 
 - Real-browser HMR check is owed. V3 was checked headlessly.
 - Optional: drop `vite` from the runtime image (about 20MB, and a required peer today). Not done.
-- `.env.example` does not exist in the repo (inference). It is not in `git ls-files`, `git status --untracked-files=all` is clean, and `.gitignore` un-ignores it, so an untracked copy would show. A direct read was blocked by policy, so its contents are unchecked. When created it holds names only, and it should list `ALLOWED_ORIGINS`, `JIRA_DEFAULT_PROJECT` and `JIRA_NEEDS_POINTING_LABEL`, which the `docs/spec/drafts/deploy.md` TODO and the plan's list omit.
+- `.env.example` does not exist in the repo (inference). It is not in `git ls-files`, `git status --untracked-files=all` is clean, and `.gitignore` un-ignores it, so an untracked copy would show. A direct read was blocked by policy, so its contents are unchecked. When created it holds names only, and it should list `ALLOWED_ORIGINS` and `JIRA_DEFAULT_PROJECT`, which the `docs/spec/drafts/deploy.md` TODO and the plan's list omit.
 - `docs/deploy.md` does not exist yet; its draft is `docs/spec/drafts/deploy.md`. The repo has only a stub `README.md`.
 - Dockerfile line 17 says `"22"`; it should read `26`.- `zod` and `@types/ws` are declared but not imported yet.
 - The stale `'../dist/client'` and `server.hmr.port` mentions in `01-overview.md` and `05-build-plan.md` were patched when the spec bundle was assembled.

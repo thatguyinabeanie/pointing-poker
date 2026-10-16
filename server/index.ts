@@ -1,5 +1,6 @@
 import { buildApp } from "./app.ts";
-import { identityConfigFromEnv, warnIfIdentityUnconfigured } from "./identity.ts";
+import { env } from "./env.ts";
+import { identityConfigWarning, identityMode } from "./identity.ts";
 
 // Loaded here rather than with `node --env-file-if-exists`: on Node 26.12 that flag makes
 // `--watch-path` track imported modules again, and Vite's per-start temp config file
@@ -11,16 +12,39 @@ try {
   if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 }
 
-const port = Number(process.env.PORT ?? 3838);
 const app = await buildApp();
-warnIfIdentityUnconfigured(identityConfigFromEnv(), (message) => app.log.warn(message));
+const { PORT, JIRA_BASE_URL, JIRA_API_TOKEN_USERNAME, JIRA_API_TOKEN_PASSWORD, ALLOWED_ORIGINS } =
+  env();
 
 // 0.0.0.0 because the platform's auth proxy reaches the container over its network interface, not loopback.
-await app.listen({ host: "0.0.0.0", port });
+await app.listen({ host: "0.0.0.0", port: PORT });
+app.log.info(`identity mode: ${identityMode()}`);
+const identityWarning = identityConfigWarning();
+if (identityWarning !== null) app.log.warn(identityWarning);
+// Booleans only; never log the values.
+app.log.info(
+  {
+    jiraConfigured: Boolean(JIRA_BASE_URL && JIRA_API_TOKEN_USERNAME && JIRA_API_TOKEN_PASSWORD),
+    allowedOriginsSet: Boolean(ALLOWED_ORIGINS?.length),
+  },
+  "startup config",
+);
 
-// TODO(step 3): 1001 close to all sockets via preClose, and a 5s hard exit.
+// app.close() runs the websocket plugin's preClose (1001 to every socket, configured in app.ts).
+// The timer is the backstop if a peer never finishes the close handshake.
+let shuttingDown = false;
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
-  process.once(signal, () => {
-    void app.close().then(() => process.exit(0));
+  process.on(signal, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    app.log.info({ signal }, "shutting down");
+    setTimeout(() => process.exit(1), 5000).unref();
+    app.close().then(
+      () => process.exit(0),
+      (err) => {
+        app.log.error({ err }, "close failed");
+        process.exit(1);
+      },
+    );
   });
 }
