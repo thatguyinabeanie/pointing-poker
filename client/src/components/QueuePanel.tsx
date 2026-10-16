@@ -1,46 +1,31 @@
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import RefreshIcon from "@mui/icons-material/Refresh";
 import SearchIcon from "@mui/icons-material/Search";
 import Alert from "@mui/material/Alert";
-import Button from "@mui/material/Button";
 import ButtonBase from "@mui/material/ButtonBase";
-import Chip from "@mui/material/Chip";
 import Collapse from "@mui/material/Collapse";
-import FormControl from "@mui/material/FormControl";
-import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
-import InputLabel from "@mui/material/InputLabel";
 import LinearProgress from "@mui/material/LinearProgress";
 import Link from "@mui/material/Link";
 import List from "@mui/material/List";
-import ListItem from "@mui/material/ListItem";
-import ListItemText from "@mui/material/ListItemText";
-import MenuItem from "@mui/material/MenuItem";
+import ListItemButton from "@mui/material/ListItemButton";
 import Paper from "@mui/material/Paper";
-import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import {
   type ChangeEvent,
+  type MouseEvent,
   type ReactNode,
   useCallback,
   useEffect,
   useId,
-  useMemo,
   useState,
 } from "react";
-import type {
-  JiraBoard,
-  JiraProject,
-  QueueItem,
-  QueueSection,
-  QueueSettings,
-  QueueState,
-} from "../../../shared/protocol.ts";
+import type { QueueItem, QueueSection, QueueState } from "../../../shared/protocol.ts";
 import { readJson, removeItem, writeJson } from "../storage.ts";
 import type { SearchResults } from "../useGameSocket.ts";
+import { IssueTypeIcon } from "./IssueTypeIcon.tsx";
 
 // localStorage, so collapse state follows the viewer across tabs and visits.
 const COLLAPSED_KEY = "pp.queue.collapsed";
@@ -65,34 +50,22 @@ function writeQuery(text: string): void {
 }
 
 interface Props {
-  settings: QueueSettings;
-  projects: JiraProject[];
-  boards: JiraBoard[];
   queue: QueueState;
   searchResults: SearchResults | null;
   currentKey: string | null;
   disabled: boolean;
-  onChangeSettings: (partial: Partial<QueueSettings>) => void;
-  onRefresh: () => void;
   onPick: (key: string) => void;
   onSearch: (query: string) => void;
 }
 
 export function QueuePanel({
-  settings,
-  projects,
-  boards,
   queue,
   searchResults,
   currentKey,
   disabled,
-  onChangeSettings,
-  onRefresh,
   onPick,
   onSearch,
 }: Props) {
-  const projectLabelId = useId();
-  const boardLabelId = useId();
   const [query, setQuery] = useState<string>(readQuery);
   const [collapsed, setCollapsed] = useState<string[]>(readCollapsed);
 
@@ -112,36 +85,6 @@ export function QueuePanel({
   }, []);
 
   const totalTickets = queue.sections.reduce((sum, section) => sum + section.total, 0);
-  // The Jira base URL is only known from ticket links, so derive the origin from the first one.
-  const jiraBase = useMemo(() => {
-    const first = queue.sections.find((section) => section.items.length > 0)?.items[0];
-    if (!first) return null;
-    try {
-      return new URL(first.url).origin;
-    } catch {
-      return null;
-    }
-  }, [queue.sections]);
-  const boardUrl =
-    jiraBase !== null && settings.projectKey !== null && settings.boardId !== null
-      ? `${jiraBase}/jira/software/c/projects/${encodeURIComponent(settings.projectKey)}/boards/${settings.boardId}/backlog`
-      : null;
-
-  // Show the stored selection only if it is a real option; MUI warns on unknown values.
-  const projectValue = projects.some((p) => p.key === settings.projectKey)
-    ? (settings.projectKey ?? "")
-    : "";
-  const boardValue = boards.some((b) => b.id === settings.boardId) ? (settings.boardId ?? "") : "";
-
-  const onProjectChange = useCallback(
-    (e: SelectChangeEvent<string>) => onChangeSettings({ projectKey: e.target.value || null }),
-    [onChangeSettings],
-  );
-  const onBoardChange = useCallback(
-    (e: SelectChangeEvent<number | "">) =>
-      onChangeSettings({ boardId: e.target.value === "" ? null : e.target.value }),
-    [onChangeSettings],
-  );
   const onQueryChange = useCallback(
     (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setQuery(e.target.value);
@@ -173,56 +116,6 @@ export function QueuePanel({
   return (
     <Paper sx={{ p: 2 }}>
       <Stack spacing={2}>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={1}
-          sx={{ alignItems: { xs: "stretch", sm: "center" }, flexWrap: "wrap" }}
-          useFlexGap
-        >
-          <FormControl size="small" sx={{ minWidth: 160 }} disabled={disabled}>
-            <InputLabel id={projectLabelId}>Project</InputLabel>
-            <Select
-              labelId={projectLabelId}
-              label="Project"
-              value={projectValue}
-              onChange={onProjectChange}
-            >
-              {projects.map((p) => (
-                <MenuItem key={p.key} value={p.key}>
-                  {p.key} ({p.name})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl
-            size="small"
-            sx={{ minWidth: 160 }}
-            disabled={disabled || boards.length === 0}
-          >
-            <InputLabel id={boardLabelId}>Board</InputLabel>
-            <Select<number | "">
-              labelId={boardLabelId}
-              label="Board"
-              value={boardValue}
-              onChange={onBoardChange}
-            >
-              <MenuItem value="">All (no board)</MenuItem>
-              {boards.map((b) => (
-                <MenuItem key={b.id} value={b.id}>
-                  {b.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <IconButton
-            aria-label="Refresh queue"
-            onClick={onRefresh}
-            disabled={disabled || queue.loading}
-          >
-            <RefreshIcon />
-          </IconButton>
-        </Stack>
-
         <Stack spacing={1}>
           <TextField
             label="Search tickets (key or text)"
@@ -266,7 +159,6 @@ export function QueuePanel({
                 key={section.id}
                 section={section}
                 isCollapsed={collapsed.includes(section.id)}
-                boardUrl={boardUrl}
                 currentKey={currentKey}
                 disabled={disabled}
                 onToggle={onToggleSection}
@@ -283,7 +175,6 @@ export function QueuePanel({
 interface SectionProps {
   section: QueueSection;
   isCollapsed: boolean;
-  boardUrl: string | null;
   currentKey: string | null;
   disabled: boolean;
   onToggle: (id: string) => void;
@@ -293,7 +184,6 @@ interface SectionProps {
 function QueueSectionBlock({
   section,
   isCollapsed,
-  boardUrl,
   currentKey,
   disabled,
   onToggle,
@@ -339,16 +229,7 @@ function QueueSectionBlock({
         </Typography>
       </ButtonBase>
       <Collapse in={!isCollapsed}>
-        <div id={bodyId}>
-          {rows}
-          {isPartial && boardUrl !== null ? (
-            <Typography variant="body2" sx={{ py: 0.5, px: 2 }}>
-              <Link href={boardUrl} target="_blank" rel="noopener noreferrer">
-                Open the full board in Jira
-              </Link>
-            </Typography>
-          ) : null}
-        </div>
+        <div id={bodyId}>{rows}</div>
       </Collapse>
     </div>
   );
@@ -388,39 +269,58 @@ interface RowProps {
 function TicketRow({ item, isCurrent, disabled, onPick }: RowProps) {
   const onClick = useCallback(() => onPick(item.key), [onPick, item.key]);
   return (
-    <ListItem
+    <ListItemButton
       divider
-      sx={{ bgcolor: isCurrent ? "action.selected" : undefined }}
-      secondaryAction={
-        <Button size="small" variant="outlined" disabled={disabled || isCurrent} onClick={onClick}>
-          {isCurrent ? "Current" : "Point this"}
-        </Button>
-      }
+      selected={isCurrent}
+      // The current ticket is already loaded, so its row is not an action.
+      disabled={disabled && !isCurrent}
+      onClick={isCurrent ? undefined : onClick}
+      aria-current={isCurrent ? "true" : undefined}
+      sx={{
+        display: "block",
+        py: 0.75,
+        borderLeft: 3,
+        borderLeftColor: isCurrent ? "primary.main" : "transparent",
+        cursor: isCurrent ? "default" : undefined,
+      }}
     >
-      <ListItemText
-        sx={{ pr: 12 }}
-        primary={
-          <>
-            <Link href={item.url} target="_blank" rel="noopener noreferrer" sx={{ mr: 1 }}>
-              {item.key}
-            </Link>
-            {item.summary}
-          </>
-        }
-        secondary={
-          <Stack
-            component="span"
-            direction="row"
-            useFlexGap
-            spacing={1}
-            sx={{ mt: 0.5, flexWrap: "wrap" }}
-          >
-            <Chip size="small" label={item.issueType} />
-            <Chip size="small" label={item.status} />
-          </Stack>
-        }
-        slotProps={{ secondary: { component: "span" } }}
-      />
-    </ListItem>
+      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+        <Typography component="span" color="text.secondary" sx={{ display: "flex", fontSize: 18 }}>
+          <IssueTypeIcon type={item.issueType} />
+        </Typography>
+        {/* Stop propagation so opening Jira does not also point the ticket. */}
+        <Link
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={stopPropagation}
+          variant="body2"
+          sx={{ fontWeight: 600 }}
+        >
+          {item.key}
+        </Link>
+        <Typography
+          component="span"
+          variant="caption"
+          sx={{
+            ml: "auto !important",
+            px: 0.75,
+            borderRadius: 1,
+            bgcolor: "action.hover",
+            color: "text.secondary",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {item.status}
+        </Typography>
+      </Stack>
+      <Typography variant="body2" noWrap title={item.summary} sx={{ mt: 0.25 }}>
+        {item.summary}
+      </Typography>
+    </ListItemButton>
   );
+}
+
+function stopPropagation(e: MouseEvent<HTMLElement>): void {
+  e.stopPropagation();
 }
