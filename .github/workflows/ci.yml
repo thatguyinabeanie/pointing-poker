@@ -69,6 +69,8 @@ jobs:
 
       # prefix= drops the default "sha-" so the tag is the bare short SHA, like the local scripts.
       # type=ref,event=branch adds the branch name, sanitized for Docker (build/v1 -> build-v1).
+      # The suffixed copy (build-v1-57) is a fixed tag per CI run, since the plain branch tag
+      # moves on every push. run_number is the workflow's run counter; a re-run keeps it.
       # :latest is what the platform deploys, so only the default branch may move it; a branch
       # push must never overwrite it.
       - id: meta
@@ -78,6 +80,7 @@ jobs:
           tags: |
             type=sha,format=short,prefix=
             type=ref,event=branch
+            type=ref,event=branch,suffix=-${{ github.run_number }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       # GitHub-hosted runners are linux/amd64, which is what the hosting platform runs.
