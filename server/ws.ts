@@ -140,6 +140,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   }
   let state = game.createInitialState({ defaultProjectKey });
   let loadSeq = 0;
+  // Ticket keys with a Jira write still running. game's jiraSave resets with each round, so it
+  // cannot stop a second PUT for the same ticket from a newer round; if the older PUT landed
+  // last, Jira would keep the old estimate while the room showed the newer one as saved.
+  const savesInFlight = new Set<string>();
   let errorId = 0;
   let queueSeq = 0;
   let boardsSeq = 0;
@@ -436,6 +440,9 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
           return;
         }
         case "reset":
+          // Bumped so a loadTicket still waiting on Jira is dropped; otherwise it would start a
+          // new round when it resolves and wipe votes cast since this reset.
+          loadSeq += 1;
           applyState(game.reset(state, { clearTicket: cmd.clearTicket }));
           broadcast();
           return;
@@ -505,14 +512,15 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         );
         return;
       }
-      if (state.jiraSave.status === "saving") {
-        sendError(socket, "save_in_progress", MESSAGES.save_in_progress);
-        return;
-      }
       // canSave guarantees a ticket; the check narrows the type.
       if (state.ticket === null) return;
       const round = state.round;
       const key = state.ticket.key;
+      if (state.jiraSave.status === "saving" || savesInFlight.has(key)) {
+        sendError(socket, "save_in_progress", MESSAGES.save_in_progress);
+        return;
+      }
+      savesInFlight.add(key);
       const by = username;
 
       applyState(game.markSave(state, { status: "saving", points, by }));
@@ -525,6 +533,9 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         } catch (err) {
           log.error({ err, key }, "setStoryPoints threw");
           res = { ok: false, reason: "jira_error", message: "Saving to Jira failed." };
+        } finally {
+          // Released as soon as the write ends, before the queue refetch below.
+          savesInFlight.delete(key);
         }
         if (!res.ok) log.warn({ reason: res.reason, key, message: res.message }, "save failed");
 
