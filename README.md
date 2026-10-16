@@ -5,6 +5,21 @@ everyone picks a card from a Fibonacci deck in private, and the team reveals the
 When the team agrees on a number, it is saved to the ticket's Story Points field in Jira. It runs
 as a service on the hosting platform, and it has one shared room per deployed instance.
 
+## What it does
+
+- Lists tickets from the chosen Jira project and board. The queue mirrors the board's backlog,
+  with sprints first and then the backlog. It shows only tickets that are not Done and have no
+  Story Points.
+- Searches by ticket key (`PROJ-123`), by bare number (uses the room's project), or by text.
+- Opens a ticket to show its description, its comments, and the Story Points value currently in Jira.
+- Collects private votes from a Fibonacci deck. Reveal shows each vote, the average and range,
+  and highlights the highest and lowest votes when they differ.
+- Saves the agreed points to the ticket's Story Points field in Jira from the room.
+- Remembers some choices across a browser refresh. Search text and an unsaved points pick stay
+  per tab. Collapsed queue sections and the queue pane width stay per browser. Drag the edge of
+  the queue pane or use the arrow keys to resize it.
+- Keeps room state in server memory, so a restart starts an empty room.
+
 ## Running locally
 
 1. Copy `docs/spec/env-example.txt` to `.env` (`cp docs/spec/env-example.txt .env`) and fill in the values. Set `ALLOW_DEV_USER=1` so the
@@ -51,4 +66,4 @@ Locally, there are two options:
 ## Deploying
 
 See [docs/deploy.md](docs/deploy.md) for the platform service settings, the outside-the-repo
-checklist, and how to verify a deployment.
+checklist, and how to verify a deployment. Every push to a branch makes CI publish the Docker image with the branch name as a tag (for example `build-v1`), plus a run-numbered tag (`build-v1-57`) and a commit-SHA tag; `latest` only moves on main.
