@@ -20,9 +20,12 @@ services:
       - path: .env
         required: false
     # The image sets NODE_ENV=production. Pin it here too: environment beats env_file, so a blank
-    # NODE_ENV in .env cannot switch the container to development mode.
+    # NODE_ENV in .env cannot switch the container to development mode. PORT is pinned for the
+    # same reason: the mapping and healthcheck use 3838, so a PORT in .env must not move the app.
+    # HOST_PORT is the way to change the external port.
     environment:
       NODE_ENV: production
+      PORT: "3838"
     restart: unless-stopped
     healthcheck:
       # The alpine image ships no curl, so use Node's built-in fetch.
