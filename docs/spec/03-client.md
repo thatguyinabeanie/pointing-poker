@@ -19,11 +19,14 @@ client/src/theme.ts               createTheme with Lato typography (already exis
 client/src/App.tsx                owns useGameSocket, fills the Layout slots, maps UI actions to commands
 client/src/useGameSocket.ts       WebSocket client hook (section 3)
 client/src/lib/estimate.ts        suggestPoints (reference, copy as is)
+client/src/lib/initials.ts        initials(name) for avatars (Players, TicketComments)
 client/src/components/Header.tsx             slim light header: queue controls, title, status dot and username
 client/src/components/layoutConstants.ts     HEADER_HEIGHT (48), shared by Header and Layout
 client/src/components/QueueControls.tsx      Project and Board selects and Refresh (moved out of QueuePanel)
 client/src/components/QueuePanel.tsx         search, queue sections, two-line clickable rows
-client/src/components/Layout.tsx             three slots (left, main, bottom) and the queue pane width
+client/src/components/Layout.tsx             three slots (left, main, bottom), the queue pane width and the bottom bar height
+client/src/components/ResizeHandle.tsx       draggable, keyboard-operable separator between the panes
+client/src/components/IssueTypeIcon.tsx      Jira issue type to icon, with a default
 client/src/components/TicketView.tsx         empty-state guide, or ticket header plus Description and Comments tabs
 client/src/components/TicketComments.tsx     comments list, rendered inside TicketView
 client/src/components/HtmlBody.tsx           the only dangerouslySetInnerHTML in the client
@@ -73,14 +76,14 @@ Below `lg` the row is a column (gap 16px) in the order Queue, ticket view, botto
 
 Resizable queue pane (`lg+`). Between the panes sits `ResizeHandle`: a 9px hit area with a 1px `divider` line and a small grip, and the line turns `primary.main` and 2px wide on hover, focus-visible and while dragging. The default queue width is one third of the row, the clamp is 260px to half the row, and it is re-clamped on window resize (a `ResizeObserver` on the row). Dragging uses pointer events with `setPointerCapture` (mouse, touch, pen) and sets `user-select: none` on the body. Double-click resets to the default. The handle is `role="separator"` with `aria-orientation="vertical"`, `aria-label="Resize ticket queue"` and percentage `aria-valuenow/min/max`; ArrowLeft and ArrowRight move 16px, Home and End jump to the min and max. The width is stored in px in `localStorage` under `pp.layout.queueWidth` through `readJson` and `writeJson` in `storage.ts`, written on drag end and on key changes (not on every pointermove) and removed on reset. Invalid stored values are ignored.
 
-Bottom bar (rendered by Layout around the `bottom` slot): a `Paper elevation={4} square` with `p: 1.5`, `mt: "16px"`, `boxSizing: "border-box"`, `position: { xs: "static", lg: "sticky" }`, `bottom: 0`, `zIndex: (theme) => theme.zIndex.appBar` (above pane content, below menus, dialogs and the snackbar), `height: { lg: 88 }` and `overflowY: { lg: "auto" }`. Not sticky and no fixed height below `lg`.
+Bottom bar (rendered by Layout around the `bottom` slot): a `Paper elevation={4} square` with `p: 1.5`, `mt: "16px"`, `boxSizing: "border-box"`, `position: { xs: "static", lg: "sticky" }`, `bottom: 0`, `zIndex: (theme) => theme.zIndex.appBar` (above pane content, below menus, dialogs and the snackbar), `minHeight: { lg: 88 }`, `maxHeight: { lg: 140 }` and `overflowY: { lg: "auto" }`. The bar sizes to its content (so a second row of players is never hidden) and scrolls only past about two player rows. Not sticky and no height limits below `lg`.
 
-Pane scrolling (lg and up). Each pane's content sits in a `Box component="section"` with an `aria-label` ("Ticket queue", "Ticket") and `sx={{ maxHeight: { lg: PANE_MAX_HEIGHT }, overflowY: { lg: "auto" } }}`. No refs and no measuring: the heights are fixed constants at the top of `Layout.tsx`, in px:
+Pane scrolling (lg and up). Each pane's content sits in a `Box component="section"` with an `aria-label` ("Ticket queue", "Ticket") and `sx={{ maxHeight: { lg: PANE_MAX_HEIGHT }, overflowY: { lg: "auto" } }}`. The heights are constants at the top of `Layout.tsx`, in px, except the bottom bar, which `Layout` measures:
 
 - `HEADER_HEIGHT = 48`, imported from `layoutConstants.ts` (the same constant `Header` uses for its own height).
-- `BOTTOM_BAR_HEIGHT = 88`: fixed. The Deck cards are 64px tall (section 2, Deck; the mock uses 48x64) and the bar has 12px padding top and bottom, so one row needs 88px. A shorter bar would clip the cards. If the people section wraps onto a second line the bar scrolls inside itself instead of growing, so the pane math stays correct.
+- Bottom bar: auto height. `BOTTOM_BAR_FALLBACK_HEIGHT = 88` is the minimum (the Deck cards are 64px tall plus 12px padding top and bottom) and the fallback before the first measurement; `BOTTOM_BAR_MAX_HEIGHT = 140` caps it at about two player rows. A `ResizeObserver` on the bar writes its rendered height to the `--bottom-bar-height` CSS variable on the Container, and the pane max-height reads that variable, so the panes shrink when the bar grows.
 - `PAGE_TOP_PADDING = 16` (Container `pt`; no bottom padding at lg and up) and `BAR_GAP = 16` (gap between panes and bar).
-- `PANE_MAX_HEIGHT = calc(100vh - 48px - 88px - 32px)`, where the 32px is the two 16px constants. This is the requested `calc(100vh - AppBar - bottom bar)` with the paddings included so the page itself never scrolls.
+- `PANE_MAX_HEIGHT = calc(100vh - 48px - var(--bottom-bar-height, 88px) - 32px)`, where the 32px is the two 16px constants. This is the header and bar heights with the paddings included so the page itself never scrolls.
 
 To keep the sticky bar on the bottom edge when the panes are short, the Container is a flex column with `minHeight: { lg: "calc(100vh - 48px)" }` and the pane row has `flexGrow: 1`. With the header above it the page is exactly one viewport tall at lg and up; only the two panes scroll. Below `lg` panes grow naturally and the page scrolls.
 
@@ -104,7 +107,7 @@ Props: `{ html: string }`. A `Box` with `dangerouslySetInnerHTML={{ __html: html
 
 ### components/Players.tsx
 
-Props: `{ players: PlayerView[]; phase: Phase; meId: number | null; stats: Snapshot["stats"] }`. Replaces `ParticipantChips`. It is the left cell of the bottom bar and wraps inside that cell, so it never moves the deck. Each player is an initials avatar with a small card tucked behind its top-right corner and the username below (ellipsis when long). Card state is chosen by `phase` and never by `p.vote` before reveal: waiting is a dashed outline, voted is face-down, revealed is face-up with the value. After reveal, when numeric votes differ, the highest and lowest render in amber (outlier, always with the value as text). The viewer gets a ring and a bold name; offline players are faded with no card. The avatar carries the full username as its accessible name, and the list is a `ul` labeled "Participants". Beside the players: "X of Y voted" during voting (Y counts connected players) and, after reveal, the average and range, plus the consensus text.
+Props: `{ players: PlayerView[]; phase: Phase; meId: number | null; stats: Snapshot["stats"] }`. Replaces `ParticipantChips`. It is the left cell of the bottom bar and wraps inside that cell, so it never moves the deck. Each player is an initials avatar with a small card tucked behind its top-right corner and the username below (ellipsis when long). Card state is chosen by `phase` and never by `p.vote` before reveal: waiting is a dashed outline, voted is face-down, revealed is face-up with the value. After reveal, when numeric votes differ, the highest and lowest render in amber (outlier, always with the value as text). The viewer gets a ring and a bold name; offline players are faded with no card. The avatar carries the full username as its accessible name, and the list is a `ul` labeled "Participants". Beside the players: "X of Y voted" during voting (Y counts connected players) and, after reveal, the average, a count chip per card and a consensus chip. The stats block shrinks and wraps so it never crowds out player tiles.
 
 ### components/Deck.tsx
 
@@ -280,12 +283,12 @@ In every state where a ticket is loaded, TicketView shows an icon link to Jira b
 | Error (server rejected a command) | Connected | same | same | same | Red snackbar for 6 seconds with "message (reason)"; a failed Jira save also shows the compact red alert with Jira's message at the far right of the ActionBar |
 | Disconnected (retrying) | Reconnecting… (warning) | Last snapshot, all controls disabled | Last snapshot, offline dimming comes from the server's next state | Disabled | All buttons and the select disabled |
 | Unauthenticated (close 4401) | n/a, bar shows only the title and "Reconnecting…" is acceptable | not shown | not shown | not shown | Warning alert "Open this app inside the hosting platform" only |
-| Ticket with a long description | Connected | Description pane scrolls on its own at lg and up; code blocks and tables scroll sideways, long words wrap; the other panes and the bottom bar stay put | unchanged | unchanged | unchanged |
+| Ticket with a long description | Connected | Ticket pane scrolls on its own at lg and up; code blocks and tables scroll sideways, long words wrap; the other panes and the bottom bar stay put | unchanged | unchanged | unchanged |
 | Ticket with many comments | Connected | The Comments tab lists every comment oldest first and the main pane scrolls on its own; the bottom bar stays visible | unchanged | unchanged | unchanged |
 | Ticket with no description or comments | Connected | "No description" and "No comments" in muted text | unchanged | unchanged | unchanged |
-| Queue loading | Connected | Progress bar replaces the ticket count; settings and list stay visible | unchanged | unchanged | unchanged |
+| Queue loading | Connected | Progress bar replaces the ticket count; the list stays visible | unchanged | unchanged | unchanged |
 | Queue empty | Connected | "No unpointed tickets. Change the project or board, or refresh." | unchanged | unchanged | unchanged |
-| Queue error | Connected | Inline warning alert with the error text; settings and Refresh stay usable | unchanged | unchanged | unchanged |
+| Queue error | Connected | Inline warning alert with the error text; the header controls stay usable | unchanged | unchanged | unchanged |
 | Search pending, empty, or error | Connected | Progress bar, "No matches", or inline warning under the search box; the queue below is unaffected | unchanged | unchanged | unchanged |
 
 In the Disconnected state the Header status shows "Reconnecting…" even for terminal failures; this is accepted and the alert beneath it explains the cause.
@@ -301,7 +304,7 @@ Accessibility checklist (all already satisfied by the reference components; do n
 - Heading hierarchy: exactly one `h1` (in Header); the ticket summary and "Comments (n)" are `h2`; "Description" is `h3` under the summary. Headings inside server HTML are styled at body size by `HtmlBody` (the sanitizer allowlist decides whether they appear at all).
 - Each pane is a `section` with an `aria-label` ("Ticket queue", "Ticket"), and the players are a `ul` labeled "Participants", so screen reader users can jump between them.
 - Comments are a real list (`List` renders `ul` with `li` items), so the count is announced. Each date is a `<time>` element with `dateTime`.
-- Keyboard and the sticky bar: the bar is last in DOM order and every control in it is a native button or select, so Tab reaches it after the panes. Sticky positioning never covers a focused element in a pane, because the pane `maxHeight` stops above the bar, and the browser scrolls a focused element into view inside its pane. Do not add `tabIndex` to the panes. The participant chips are not interactive and are not tab stops.
+- Keyboard and the sticky bar: the bar is last in DOM order and every control in it is a native button or select, so Tab reaches it after the panes. Sticky positioning never covers a focused element in a pane, because the pane `maxHeight` stops above the bar, and the browser scrolls a focused element into view inside its pane. Do not add `tabIndex` to the panes. The player avatars are not interactive and are not tab stops; the resize handle between the panes is a tab stop.
 - The page has exactly one `h1` (in Header). Ticket key links (in TicketView, the queue and the search results) are the only external links and use `rel="noopener noreferrer"`.
 - The loading spinner has an accessible label. The snackbar's `Alert` has the implicit `role="alert"` so errors are announced.
 - Text contrast comes from the stock MUI theme; do not lower opacity on text other than the offline player rows.
@@ -311,10 +314,10 @@ Responsive rules:
 - Breakpoints: laptop widths are the target. At `lg` (1200px) and up: two columns (queue 4 and main 8 of 12) with independent scrolling and the single-row sticky bottom bar (section 2, Layout.tsx). Below `lg`: everything stacks full width in the order Queue, ticket view, then the bottom bar (players, Deck, ActionBar stacked), the bar is not sticky and the page scrolls. No phone-specific work beyond "nothing breaks": no horizontal page scroll, and the Deck still wraps.
 - Layout width: `Container maxWidth={false}` uses the whole page, with `px: { xs: 2, lg: 3 }` side gutters and no `maxWidth` cap.
 - ActionBar is always a single row. Below `lg` the bottom bar stacks its three sections, and the ActionBar row may wrap through `useFlexGap`; if buttons crowd, let the row `flexWrap: "wrap"`.
-- Deck wraps (`flexWrap`) when its section is narrower than ten cards. Cards stay at least 48px wide and 64px tall; that height is what sets the 88px bottom bar.
+- Deck wraps (`flexWrap`) when its section is narrower than ten cards. Cards stay at least 48px wide and 64px tall; that height sets the 88px minimum of the bottom bar.
 - The header is a fixed 48px single row. The title is hidden below `md`, and the queue selects shrink to `minWidth` 110 at `xs` so the header does not overflow on phones.
 - No horizontal page scroll at 1000px or at 1440px. Verify by resizing the browser.
-- Do not use fixed pixel widths on containers. `minWidth: 140` (110 at `xs`) on the header selects and `minWidth: 48` on cards are the only fixed widths. The fixed heights in `Layout.tsx` (header 48, bottom bar 88) apply at lg and up only.
+- Do not use fixed pixel widths on containers. `minWidth: 140` (110 at `xs`) on the header selects and `minWidth: 48` on cards are the only fixed widths. The fixed heights in `Layout.tsx` (header 48; bottom bar minimum 88, maximum 140) apply at lg and up only.
 
 ## 9. Acceptance checklist for the implementer
 
