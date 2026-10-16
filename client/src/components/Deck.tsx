@@ -54,7 +54,14 @@ function DeckCard({ card, isSelected, disabled, onSelect, onClear }: CardProps) 
       aria-pressed={isSelected}
       disabled={disabled}
       onClick={onClick}
-      sx={{ minWidth: 48, height: 64, fontSize: 20 }}
+      // Lift is on the button, not the group, so the focus ring travels with the card.
+      sx={{
+        minWidth: 48,
+        height: 64,
+        fontSize: 20,
+        transition: "transform 120ms",
+        transform: isSelected ? "translateY(-4px)" : "none",
+      }}
     >
       {card}
     </Button>
