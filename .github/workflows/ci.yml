@@ -72,14 +72,15 @@ jobs:
       # The suffixed copy (build-v1-57) is a fixed tag per CI run, since the plain branch tag
       # moves on every push. run_number is the workflow's run counter; a re-run keeps it.
       # :latest is what the platform deploys, so only the default branch may move it; a branch
-      # push must never overwrite it.
+      # push must never overwrite it. For the same reason a branch literally named "latest" gets
+      # no plain branch tag (it would be :latest); its suffixed tag, latest-57, is harmless.
       - id: meta
         uses: docker/metadata-action@v6
         with:
           images: gabemendoza1/pointing-poker
           tags: |
             type=sha,format=short,prefix=
-            type=ref,event=branch
+            type=ref,event=branch,enable=${{ github.ref_name != 'latest' }}
             type=ref,event=branch,suffix=-${{ github.run_number }}
             type=raw,value=latest,enable={{is_default_branch}}
 
