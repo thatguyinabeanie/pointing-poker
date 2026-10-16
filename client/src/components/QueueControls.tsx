@@ -19,6 +19,10 @@ interface Props {
   onRefresh: () => void;
 }
 
+// A default small select is 40px, which pushes its floating label above the top of the 48px
+// header and clips it. Trimming the vertical padding gives a 32px control with room for the label.
+const SELECT_SX = { "& .MuiSelect-select": { py: 0.5 } };
+
 export function QueueControls({
   settings,
   projects,
@@ -57,6 +61,7 @@ export function QueueControls({
       >
         <InputLabel id={projectLabelId}>Project</InputLabel>
         <Select
+          sx={SELECT_SX}
           labelId={projectLabelId}
           label="Project"
           value={projectValue}
@@ -76,6 +81,7 @@ export function QueueControls({
       >
         <InputLabel id={boardLabelId}>Board</InputLabel>
         <Select<number | "">
+          sx={SELECT_SX}
           labelId={boardLabelId}
           label="Board"
           value={boardValue}

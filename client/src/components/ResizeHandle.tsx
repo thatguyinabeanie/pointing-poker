@@ -128,7 +128,6 @@ export function ResizeHandle({ width, min, max, rowWidth, onPreview, onCommit, o
         cursor: "col-resize",
         // Without this the browser claims horizontal touch moves for scrolling and cancels the drag.
         touchAction: "none",
-        outline: "none",
         // The line and grip are children so one hover/focus rule can recolor the line.
         "& .resize-line": {
           position: "absolute",

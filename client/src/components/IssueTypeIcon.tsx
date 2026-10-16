@@ -24,6 +24,8 @@ interface Props {
 }
 
 export function IssueTypeIcon({ type }: Props) {
-  const Icon = ICONS[type.toLowerCase()] ?? DescriptionOutlined;
+  // hasOwn so a type named "constructor" cannot resolve to an Object.prototype member.
+  const key = type.toLowerCase();
+  const Icon = Object.hasOwn(ICONS, key) ? ICONS[key] : DescriptionOutlined;
   return <Icon fontSize="inherit" titleAccess={type} />;
 }

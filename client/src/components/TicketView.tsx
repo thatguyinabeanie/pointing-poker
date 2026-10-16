@@ -138,9 +138,19 @@ export function TicketView({ ticket }: { ticket: Ticket | null }) {
               {ticket.summary}
             </Typography>
           </Stack>
-          <Box sx={{ textAlign: "right", flexShrink: 0 }}>
+          <Box
+            sx={{
+              textAlign: "right",
+              flexShrink: 0,
+              border: 1,
+              borderColor: "divider",
+              borderRadius: 1,
+              px: 1.5,
+              py: 0.5,
+            }}
+          >
             <Typography variant="caption" color="text.secondary" component="div">
-              Current
+              Current points
             </Typography>
             <Typography variant="h5" component="div">
               {ticket.currentPoints ?? "–"}

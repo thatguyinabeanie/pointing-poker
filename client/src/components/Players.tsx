@@ -47,7 +47,7 @@ export function Players({ players, phase, meId, stats }: Props) {
   const connected = players.filter((p) => p.connected);
   const votedCount = connected.filter((p) => p.hasVoted).length;
   return (
-    <Stack direction="row" useFlexGap spacing={2} sx={{ alignItems: "center" }}>
+    <Stack direction="row" useFlexGap spacing={2} sx={{ alignItems: "center", minWidth: 0 }}>
       <Stack
         component="ul"
         direction="row"
@@ -72,7 +72,7 @@ export function Players({ players, phase, meId, stats }: Props) {
             direction="row"
             useFlexGap
             spacing={0.5}
-            sx={{ flexShrink: 0, flexWrap: "wrap", alignItems: "center" }}
+            sx={{ flex: "0 1 auto", minWidth: 0, flexWrap: "wrap", alignItems: "center" }}
           >
             <Typography variant="body2">Avg {stats.average ?? "–"}</Typography>
             {Object.entries(stats.counts).map(([card, n]) => (
@@ -117,6 +117,7 @@ function Player({ player: p, isMe, revealed, outlier }: PlayerProps) {
     >
       <Box sx={{ position: "relative", width: 26, height: 26 }}>
         <Avatar
+          role="img"
           aria-label={p.username}
           title={p.username}
           sx={{

@@ -13,13 +13,16 @@ interface Props {
   bottom: ReactNode;
 }
 
-// Fixed heights (px) at lg and up. The header height comes from layoutConstants. The bottom bar is
-// fixed so the pane height is a plain calc() with no measuring; the bar scrolls inside itself
-// if its content outgrows it. Below lg everything stacks and the page scrolls.
-const BOTTOM_BAR_HEIGHT = 88;
+// Heights (px) at lg and up. The header height comes from layoutConstants. The bottom bar sizes to
+// its content (so a second row of players is never hidden); Layout measures it into a CSS variable
+// that the pane max-height reads, and the bar is capped at about two player rows and scrolls
+// beyond that. Below lg everything stacks and the page scrolls.
+const BOTTOM_BAR_FALLBACK_HEIGHT = 88;
+const BOTTOM_BAR_MAX_HEIGHT = 140;
+const BOTTOM_BAR_HEIGHT_VAR = "--bottom-bar-height";
 const PAGE_TOP_PADDING = 16;
 const BAR_GAP = 16;
-const PANE_MAX_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - ${BOTTOM_BAR_HEIGHT}px - ${PAGE_TOP_PADDING + BAR_GAP}px)`;
+const PANE_MAX_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - var(${BOTTOM_BAR_HEIGHT_VAR}, ${BOTTOM_BAR_FALLBACK_HEIGHT}px) - ${PAGE_TOP_PADDING + BAR_GAP}px)`;
 
 // The queue pane is one third of the row by default (the old lg 4/12 split), never narrower than
 // the minimum, never wider than half the row. The viewer's choice is stored in px and clamped
@@ -50,6 +53,8 @@ function Pane({ label, children }: { label: string; children: ReactNode }) {
 // because position: sticky only works inside a parent that is taller than the sticky element.
 export function Layout({ left, main, bottom }: Props) {
   const rowRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   const [rowWidth, setRowWidth] = useState(0);
   // null means "use the default"; a number is the viewer's saved or in-progress choice.
   const [chosen, setChosen] = useState<number | null>(() =>
@@ -63,6 +68,23 @@ export function Layout({ left, main, bottom }: Props) {
     setRowWidth(row.getBoundingClientRect().width);
     const observer = new ResizeObserver(([entry]) => setRowWidth(entry.contentRect.width));
     observer.observe(row);
+    return () => observer.disconnect();
+  }, []);
+
+  // Publish the bar's rendered height as a CSS variable on the container so the pane max-height
+  // shrinks to match. Written straight to the style so a bar resize does not re-render the tree.
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const container = containerRef.current;
+    if (!bar || !container) return;
+    const publish = () =>
+      container.style.setProperty(
+        BOTTOM_BAR_HEIGHT_VAR,
+        `${Math.round(bar.getBoundingClientRect().height)}px`,
+      );
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(bar);
     return () => observer.disconnect();
   }, []);
 
@@ -85,6 +107,7 @@ export function Layout({ left, main, bottom }: Props) {
 
   return (
     <Container
+      ref={containerRef}
       maxWidth={false}
       sx={{
         px: { xs: 2, lg: 3 },
@@ -135,6 +158,7 @@ export function Layout({ left, main, bottom }: Props) {
         </Box>
       </Box>
       <Paper
+        ref={barRef}
         elevation={4}
         square
         sx={{
@@ -144,7 +168,8 @@ export function Layout({ left, main, bottom }: Props) {
           bottom: 0,
           zIndex: (theme) => theme.zIndex.appBar,
           boxSizing: "border-box",
-          height: { lg: BOTTOM_BAR_HEIGHT },
+          minHeight: { lg: BOTTOM_BAR_FALLBACK_HEIGHT },
+          maxHeight: { lg: BOTTOM_BAR_MAX_HEIGHT },
           overflowY: { lg: "auto" },
         }}
       >
