@@ -1,59 +1,69 @@
+import Avatar from "@mui/material/Avatar";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
-import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import type { Ticket } from "../../../shared/protocol.ts";
+import type { TicketComment } from "../../../shared/protocol.ts";
+import { initials } from "../lib/initials.ts";
 import { HtmlBody } from "./HtmlBody.tsx";
 
-interface Props {
-  ticket: Ticket | null;
+const relative = new Intl.RelativeTimeFormat("en", { style: "narrow" });
+
+const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["month", 30 * 86400],
+  ["week", 7 * 86400],
+  ["day", 86400],
+  ["hour", 3600],
+  ["minute", 60],
+];
+
+// Narrow style renders "2d ago"; the "ago" is dropped so the label stays short beside the author.
+// Anything under a minute, or dated in the future by clock skew, reads "just now".
+function relativeTime(iso: string): string {
+  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (!Number.isFinite(seconds)) return "";
+  for (const [unit, size] of UNITS) {
+    if (seconds >= size) {
+      return relative.format(-Math.floor(seconds / size), unit).replace(/\s*ago$/, "");
+    }
+  }
+  return "just now";
 }
 
-export function TicketComments({ ticket }: Props) {
-  if (!ticket) {
-    return (
-      <Paper sx={{ p: 2 }}>
-        <Typography color="text.secondary">
-          Comments appear here once a ticket is loaded.
-        </Typography>
-      </Paper>
-    );
+// List only. TicketView owns the surrounding Paper and the tab heading.
+export function TicketComments({ comments }: { comments: TicketComment[] }) {
+  if (comments.length === 0) {
+    return <Typography color="text.secondary">No comments</Typography>;
   }
+  // Array order is display order; the server sends oldest first.
   return (
-    <Paper sx={{ p: 2 }}>
-      <Typography variant="h6" component="h2" sx={{ mb: 1 }}>
-        Comments ({ticket.comments.length})
-      </Typography>
-      {ticket.comments.length === 0 ? (
-        <Typography color="text.secondary">No comments</Typography>
-      ) : (
-        // Array order is display order; the server sends oldest first.
-        <List disablePadding>
-          {ticket.comments.map((c) => (
-            <ListItem
-              key={c.id}
-              disableGutters
-              sx={{ display: "block", borderTop: 1, borderColor: "divider", py: 1.5 }}
-            >
-              <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: "wrap", mb: 0.5 }}>
-                <Typography variant="subtitle2" component="span">
-                  {c.author}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  component="time"
-                  dateTime={c.createdAt}
-                  color="text.secondary"
-                >
-                  {new Date(c.createdAt).toLocaleString()}
-                </Typography>
-              </Stack>
-              <HtmlBody html={c.bodyHtml} />
-            </ListItem>
-          ))}
-        </List>
-      )}
-    </Paper>
+    <List disablePadding>
+      {comments.map((c) => (
+        <ListItem
+          key={c.id}
+          disableGutters
+          sx={{ display: "block", borderTop: 1, borderColor: "divider", py: 1.5 }}
+        >
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", mb: 0.5 }}>
+            <Avatar sx={{ width: 24, height: 24, fontSize: "0.7rem" }}>{initials(c.author)}</Avatar>
+            <Typography variant="subtitle2" component="span">
+              {c.author}
+            </Typography>
+            <Tooltip title={new Date(c.createdAt).toLocaleString()}>
+              <Typography
+                variant="caption"
+                component="time"
+                dateTime={c.createdAt}
+                color="text.secondary"
+              >
+                {relativeTime(c.createdAt)}
+              </Typography>
+            </Tooltip>
+          </Stack>
+          <HtmlBody html={c.bodyHtml} />
+        </ListItem>
+      ))}
+    </List>
   );
 }
