@@ -9,11 +9,12 @@ interface Props {
 export function ErrorSnackbar({ error }: Props) {
   const [open, setOpen] = useState(false);
 
-  // Keyed on id, not message, so the same message arriving twice re-opens the snackbar.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: error.id is the intended trigger
+  // Keyed on the error object, not its message or id. Every event is a new object, so the same
+  // message twice re-opens the snackbar. The id is the server's counter, which restarts at 1
+  // after a server restart while this component survives the reconnect, so it can repeat.
   useEffect(() => {
     setOpen(error !== null);
-  }, [error?.id]);
+  }, [error]);
 
   const close = useCallback(() => setOpen(false), []);
   const onClose = useCallback((_: unknown, reason?: string) => {
