@@ -236,7 +236,7 @@ CMD ["node", "server/index.ts"]
 
 `.github/workflows/ci.yml` has two jobs. `checks` runs on every push and pull request: checkout, `jdx/mise-action` (Node 26 and npm 12 from `mise.toml`), `npm ci`, `npm run lint`, `npm run tsc:check`, `npm run build`, then `npm audit --omit=dev --audit-level=high`. Each gate after install runs with `if: ${{ !cancelled() }}`, so one run reports every failure. The audit uses `--omit=dev` on purpose: the lint toolchain drags in advisories that never reach a deployed container, and failing on those trains people to ignore the gate.
 
-`publish` needs `checks` and runs only on a push to `main`. Actions are pinned to major tags (`actions/checkout@v7`, `jdx/mise-action@v5`, `docker/*@v4/v6/v7`). The workflow has `permissions: contents: read` and a concurrency group that cancels an older run on the same ref.
+`publish` needs `checks` and runs on every branch push (`startsWith(github.ref, 'refs/heads/')`), never on pull requests or tag pushes. Skipping pull requests keeps the Docker Hub secrets away from fork PRs. Actions are pinned to major tags (`actions/checkout@v7`, `jdx/mise-action@v5`, `docker/*@v4/v6/v7`). The workflow has `permissions: contents: read` and a concurrency group that cancels an older run on the same ref.
 
 No test step (no tests by decision).
 
@@ -253,7 +253,7 @@ Three scripts in `scripts/` (also `npm run image:build`, `image:push`, `image:ru
 
 Open point: the platform service must be able to pull the image. A private Docker Hub repo needs registry credentials on the Platform side, or the repo must be public. Confirm with the Platform admins before the first deploy. The console also keeps an allowlist of public images in `data/public_images`, so check whether that applies.
 
-Merges to `main` publish `:<short-sha>` and `:latest` to Docker Hub from the `publish` job in `.github/workflows/ci.yml` (linux/amd64, on GitHub's amd64 runners). The scripts remain for local builds and smoke tests.
+Every branch push publishes `:<short-sha>` and `:<branch>` (sanitized, `build/v1` becomes `build-v1`) to Docker Hub from the `publish` job in `.github/workflows/ci.yml` (linux/amd64, on GitHub's amd64 runners), so a branch can be tried on the platform. Merges to `main` also publish `:latest` (`enable={{is_default_branch}}`), so a branch push never overwrites what is deployed (decision 37). The scripts remain for local builds and smoke tests.
 
 Setup the user does outside the repo:
 
