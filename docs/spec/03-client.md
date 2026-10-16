@@ -23,7 +23,7 @@ client/src/components/Header.tsx             slim light header: queue controls, 
 client/src/components/layoutConstants.ts     HEADER_HEIGHT (48), shared by Header and Layout
 client/src/components/QueueControls.tsx      Project and Board selects and Refresh (moved out of QueuePanel)
 client/src/components/QueuePanel.tsx         search, queue sections, two-line clickable rows
-client/src/components/Layout.tsx             pure layout, three slots: left, main, bottom
+client/src/components/Layout.tsx             three slots (left, main, bottom) and the queue pane width
 client/src/components/TicketView.tsx         empty-state guide, or ticket header plus Description and Comments tabs
 client/src/components/TicketComments.tsx     comments list, rendered inside TicketView
 client/src/components/HtmlBody.tsx           the only dangerouslySetInnerHTML in the client
@@ -61,15 +61,17 @@ Rows (queue and search results share one internal `TicketRows` component): two l
 
 ### components/Layout.tsx
 
-Props: `{ left: ReactNode; main: ReactNode; bottom: ReactNode }`. Pure layout: no state, no data, no knowledge of the other components. It renders a `Container maxWidth={false}` with `sx={{ px: { xs: 2, lg: 3 } }}` (full width), then a MUI 9 `Grid container spacing={2}` (the Grid2 API: `size` prop, no `item`, imported from `@mui/material/Grid`) with two items, then the bottom bar.
+Props: `{ left: ReactNode; main: ReactNode; bottom: ReactNode }`. It holds one piece of state, the queue pane width, and no data. It renders a `Container maxWidth={false}` with `sx={{ px: { xs: 2, lg: 3 } }}` (full width), then a flex row of the two panes, then the bottom bar.
 
-| Slot | Grid item | Content from App |
+| Slot | Position | Content from App |
 |---|---|---|
-| `left` | `size={{ xs: 12, lg: 4 }}` | `QueuePanel` (queue and search) |
-| `main` | `size={{ xs: 12, lg: 8 }}` | `TicketView` |
-| `bottom` | outside the Grid, full width | players, `Deck`, `ActionBar` in a three-column grid |
+| `left` | queue pane, fixed px width at `lg+` | `QueuePanel` (queue and search) |
+| `main` | `flex: 1; minWidth: 0` | `TicketView` |
+| `bottom` | outside the row, full width | players, `Deck`, `ActionBar` in a three-column grid |
 
-Below `lg` the items are 12 wide in the order Queue, ticket view, bottom bar. The bottom bar is a sibling of the Grid inside the Container (visually the full width). It must not be a Grid item: `position: sticky` only works inside a parent taller than the sticky element, and a Grid item holding only the bar is exactly as tall as the bar.
+Below `lg` the row is a column (gap 16px) in the order Queue, ticket view, bottom bar, and there is no handle. The bottom bar is a sibling of the row inside the Container (visually the full width). It must not be inside the row: `position: sticky` only works inside a parent taller than the sticky element, and a wrapper holding only the bar is exactly as tall as the bar.
+
+Resizable queue pane (`lg+`). Between the panes sits `ResizeHandle`: a 9px hit area with a 1px `divider` line and a small grip, and the line turns `primary.main` and 2px wide on hover, focus-visible and while dragging. The default queue width is one third of the row, the clamp is 260px to half the row, and it is re-clamped on window resize (a `ResizeObserver` on the row). Dragging uses pointer events with `setPointerCapture` (mouse, touch, pen) and sets `user-select: none` on the body. Double-click resets to the default. The handle is `role="separator"` with `aria-orientation="vertical"`, `aria-label="Resize ticket queue"` and percentage `aria-valuenow/min/max`; ArrowLeft and ArrowRight move 16px, Home and End jump to the min and max. The width is stored in px in `localStorage` under `pp.layout.queueWidth` through `readJson` and `writeJson` in `storage.ts`, written on drag end and on key changes (not on every pointermove) and removed on reset. Invalid stored values are ignored.
 
 Bottom bar (rendered by Layout around the `bottom` slot): a `Paper elevation={4} square` with `p: 1.5`, `mt: "16px"`, `boxSizing: "border-box"`, `position: { xs: "static", lg: "sticky" }`, `bottom: 0`, `zIndex: (theme) => theme.zIndex.appBar` (above pane content, below menus, dialogs and the snackbar), `height: { lg: 88 }` and `overflowY: { lg: "auto" }`. Not sticky and no fixed height below `lg`.
 
@@ -80,7 +82,7 @@ Pane scrolling (lg and up). Each pane's content sits in a `Box component="sectio
 - `PAGE_TOP_PADDING = 16` (Container `pt`; no bottom padding at lg and up) and `BAR_GAP = 16` (gap between panes and bar).
 - `PANE_MAX_HEIGHT = calc(100vh - 48px - 88px - 32px)`, where the 32px is the two 16px constants. This is the requested `calc(100vh - AppBar - bottom bar)` with the paddings included so the page itself never scrolls.
 
-To keep the sticky bar on the bottom edge when the panes are short, the Container is a flex column with `minHeight: { lg: "calc(100vh - 48px)" }` and the Grid has `flexGrow: 1`. With the header above it the page is exactly one viewport tall at lg and up; only the two panes scroll. Below `lg` panes grow naturally and the page scrolls.
+To keep the sticky bar on the bottom edge when the panes are short, the Container is a flex column with `minHeight: { lg: "calc(100vh - 48px)" }` and the pane row has `flexGrow: 1`. With the header above it the page is exactly one viewport tall at lg and up; only the two panes scroll. Below `lg` panes grow naturally and the page scrolls.
 
 ### components/TicketView.tsx
 
