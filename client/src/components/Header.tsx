@@ -16,21 +16,41 @@ export function Header({ connected, meName, controls }: Props) {
     <Box
       component="header"
       sx={{
-        height: HEADER_HEIGHT,
+        // Below sm the controls need about 270px, which does not fit beside the status in one
+        // row at 320px, so the header grows to two rows (status above, controls below).
+        // From sm up it is the fixed single row. Layout only uses HEADER_HEIGHT at lg and up.
+        height: { xs: "auto", sm: HEADER_HEIGHT },
+        minHeight: HEADER_HEIGHT,
         boxSizing: "border-box",
         px: 2,
+        py: { xs: 0.5, sm: 0 },
         display: "grid",
-        // The auto center column keeps the title centered whatever width the side columns take.
-        gridTemplateColumns: "1fr auto 1fr",
+        // Below md the title is hidden, so the controls take all the free width. From md the
+        // auto center column keeps the title centered whatever width the side columns take.
+        gridTemplateColumns: {
+          xs: "minmax(0, 1fr)",
+          sm: "minmax(0, 1fr) auto",
+          md: "1fr auto 1fr",
+        },
         alignItems: "center",
-        gap: 2,
+        columnGap: 2,
+        rowGap: 0.5,
         bgcolor: (theme) => theme.palette.grey[50],
         borderBottom: 1,
         borderColor: "divider",
       }}
     >
       {/* minWidth 0 lets the controls shrink instead of widening the grid and pushing the title. */}
-      <Box sx={{ minWidth: 0, display: "flex", alignItems: "center" }}>{controls}</Box>
+      <Box
+        sx={{
+          minWidth: 0,
+          display: "flex",
+          alignItems: "center",
+          gridRow: { xs: 2, sm: 1 },
+        }}
+      >
+        {controls}
+      </Box>
       <Typography
         variant="subtitle1"
         component="h1"
@@ -40,7 +60,8 @@ export function Header({ connected, meName, controls }: Props) {
       </Typography>
       <Box
         sx={{
-          gridColumn: 3,
+          gridColumn: { xs: 1, sm: 2, md: 3 },
+          gridRow: 1,
           minWidth: 0,
           display: "flex",
           alignItems: "center",
