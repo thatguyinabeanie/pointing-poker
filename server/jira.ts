@@ -48,7 +48,7 @@ export interface JiraClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const BASE_FIELDS = "summary,issuetype,status,assignee,priority,labels,description,comment";
+const BASE_FIELDS = "summary,issuetype,status,assignee,priority,labels,description";
 const MAX_COMMENTS = 50;
 const MAX_DESCRIPTION_CHARS = 200_000;
 const MAX_COMMENT_CHARS = 20_000;
@@ -123,9 +123,6 @@ interface RawComment {
   id?: unknown;
   author?: { displayName?: unknown } | null;
   created?: unknown;
-}
-interface RawRenderedComment {
-  id?: unknown;
   renderedBody?: unknown;
 }
 
@@ -248,32 +245,45 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return capSanitizedHtml(sanitizeJiraHtml(html, baseUrl), baseUrl, MAX_DESCRIPTION_CHARS);
   }
 
-  // Jira lists comments oldest first. Rendered and raw comments are paired by id, falling
-  // back to position, and only the most recent MAX_COMMENTS are kept.
-  function buildComments(
-    raw: RawComment[] | undefined,
-    rendered: RawRenderedComment[] | undefined,
-  ): TicketComment[] {
-    if (!Array.isArray(raw)) return [];
-    const renderedById = new Map<string, string>();
-    for (const r of rendered ?? []) {
-      if (typeof r?.id === "string" && typeof r.renderedBody === "string")
-        renderedById.set(r.id, r.renderedBody);
+  // Maps the comment endpoint's page. It is requested newest first (see fetchComments), so the
+  // list is reversed here to give the oldest-first order the UI shows.
+  function buildComments(raw: RawComment[]): TicketComment[] {
+    return raw
+      .map((c, i): TicketComment => {
+        const body = c.renderedBody;
+        return {
+          id: typeof c.id === "string" ? c.id : String(i),
+          author: typeof c.author?.displayName === "string" ? c.author.displayName : "Unknown",
+          createdAt: typeof c.created === "string" ? c.created : "",
+          bodyHtml:
+            typeof body === "string"
+              ? capSanitizedHtml(sanitizeJiraHtml(body, baseUrl), baseUrl, MAX_COMMENT_CHARS)
+              : "",
+        };
+      })
+      .reverse();
+  }
+
+  // expand=renderedFields on the issue does not put renderedBody on comments (that property
+  // exists only on the comment endpoint, with expand=renderedBody), so every comment came back
+  // with an empty body. orderBy=-created with maxResults=MAX_COMMENTS returns exactly the latest
+  // MAX_COMMENTS in one request, so no paging is needed. A failure here must not fail the ticket
+  // load: players can still vote without the comments, so it degrades to none.
+  async function fetchComments(key: string): Promise<TicketComment[]> {
+    const res = await request(
+      "GET",
+      `/rest/api/3/issue/${encodeURIComponent(key)}/comment?orderBy=-created&maxResults=${MAX_COMMENTS}&expand=renderedBody`,
+    );
+    if (!res.ok) {
+      opts.logger?.debug({ key, reason: res.reason }, "jira comments fetch failed");
+      return [];
     }
-    const offset = Math.max(0, raw.length - MAX_COMMENTS);
-    return raw.slice(offset).map((c, i): TicketComment => {
-      const id = typeof c.id === "string" ? c.id : String(offset + i);
-      const body = renderedById.get(id) ?? rendered?.[offset + i]?.renderedBody;
-      return {
-        id,
-        author: typeof c.author?.displayName === "string" ? c.author.displayName : "Unknown",
-        createdAt: typeof c.created === "string" ? c.created : "",
-        bodyHtml:
-          typeof body === "string"
-            ? capSanitizedHtml(sanitizeJiraHtml(body, baseUrl), baseUrl, MAX_COMMENT_CHARS)
-            : "",
-      };
-    });
+    const page = parseJson(res.text) as { comments?: unknown } | undefined;
+    if (!page || !Array.isArray(page.comments)) {
+      opts.logger?.debug({ key }, "jira comments unreadable");
+      return [];
+    }
+    return buildComments(page.comments.slice(0, MAX_COMMENTS) as RawComment[]);
   }
 
   async function getIssue(key: string): Promise<Result<Ticket>> {
@@ -283,8 +293,8 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     const fieldId = field.ok ? field.value : null;
     const fields = fieldId ? `${BASE_FIELDS},${fieldId}` : BASE_FIELDS;
 
-    // expand=renderedFields makes Jira return description and comment bodies as HTML
-    // (the v3 API otherwise gives Atlassian Document Format JSON).
+    // expand=renderedFields makes Jira return the description as HTML (the v3 API otherwise
+    // gives Atlassian Document Format JSON). Comments come from their own endpoint.
     const res = await request(
       "GET",
       `/rest/api/3/issue/${encodeURIComponent(key)}?fields=${fields}&expand=renderedFields`,
@@ -301,20 +311,15 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
           assignee?: { displayName?: unknown } | null;
           priority?: { name?: unknown } | null;
           labels?: unknown;
-          comment?: { comments?: RawComment[] };
           [fieldId: string]: unknown;
         };
-        renderedFields?: {
-          description?: unknown;
-          comment?: { comments?: RawRenderedComment[] };
-        } | null;
+        renderedFields?: { description?: unknown } | null;
       };
       const raw = fieldId ? data.fields[fieldId] : null;
-      // If renderedFields is missing, degrade to no description and no comments rather
-      // than failing the whole load: players can still vote on the summary alone.
-      const rendered = data.renderedFields ?? undefined;
-      const descriptionHtml = renderDescription(rendered?.description);
-      const comments = buildComments(data.fields.comment?.comments, rendered?.comment?.comments);
+      // If renderedFields is missing, degrade to no description rather than failing the whole
+      // load: players can still vote on the summary alone.
+      const descriptionHtml = renderDescription(data.renderedFields?.description);
+      const comments = await fetchComments(key);
       opts.logger?.debug(
         {
           key: data.key,
