@@ -44,11 +44,11 @@ client/src/components/ErrorSnackbar.tsx
 
 ### components/Header.tsx
 
-Props: `{ connected: boolean; meName?: string; controls?: ReactNode }`. A `Box component="header"` of height `HEADER_HEIGHT` (48, from `layoutConstants.ts`, so `Layout` and `Header` always agree), light grey background and a bottom border, not an `AppBar`. A three-column grid `1fr auto 1fr` keeps the title centered whatever the side widths are. Left: the `controls` slot (App passes `QueueControls`, and passes nothing until the first snapshot). Center: "Pointing Poker" as the page's only `h1`, hidden below `md`. Right: a status dot (green with tooltip "Connected", amber with tooltip and visible text "Reconnecting…" when disconnected) and the viewer's username. Color is never the only signal.
+Props: `{ connected: boolean; meName?: string; controls?: ReactNode }`. A `Box component="header"` of height `HEADER_HEIGHT` (48, from `layoutConstants.ts`, so `Layout` and `Header` always agree), light grey background and a bottom border, not an `AppBar`. A three-column grid `1fr auto 1fr` keeps the title centered whatever the side widths are. Left: the `controls` slot (App passes `QueueControls`, and passes nothing until the first snapshot). Center: "Pointing Poker" as the page's only `h1`, hidden below `md`. Below `md` the grid is `minmax(0,1fr) auto` (controls take the free width, status on the right); below `sm` it is one column and the header grows to two rows (status above, controls below, `height: auto`, `minHeight` 48) because the controls need about 270px and do not fit beside the status at 320px. From `sm` the height is the fixed 48, and `Layout` uses `HEADER_HEIGHT` only at `lg` and up. Right: a status dot (green with tooltip "Connected", amber with tooltip and visible text "Reconnecting…" when disconnected) and the viewer's username. Color is never the only signal.
 
 ### components/QueueControls.tsx
 
-Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header is a fixed 48px). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads.
+Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header gives it the full width below `sm`, see Header). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads.
 
 ### components/QueuePanel.tsx
 
@@ -117,7 +117,7 @@ Props: `{ deck: readonly string[]; selected: string | null; disabled: boolean; o
 
 Props: `{ phase: Phase; round: number; stats: Snapshot["stats"]; ticket: Ticket | null; deck: readonly string[]; disabled: boolean; jiraSave: JiraSave; onReveal: () => void; onReset: (opts: { clearTicket: boolean }) => void; onSave: (points: number) => void }`. It is the right section of the bottom bar. It shows no stats (those are in `Players`); `stats` is kept only to preset the select.
 
-MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center" }}`, a single row at every width, holding the controls for the current phase in this order:
+MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}`, one row that wraps when the controls and the save alert do not fit (below `lg`), holding the controls for the current phase in this order:
 
 - `phase === "voting"`: Reveal (`Button variant="contained"`), then the reset button.
 - `phase === "revealed"`: a `FormControl size="small" sx={{ minWidth: 140 }}` with `InputLabel` (id from `useId`) and `Select` labeled "Story points" whose `MenuItem`s are `deck.filter(isNumericCard)`; then Save (`Button variant="contained"`, "Save to Jira", with a 16px `CircularProgress` as `startIcon` while saving); then the reset button.
@@ -136,7 +136,7 @@ Behaviors to preserve:
 
 ### components/ErrorSnackbar.tsx
 
-Props: `{ error: { id: number; message: string } | null }`. Holds its own `open` state. An effect keyed on `error?.id` sets `open` to `error !== null`; it carries `// biome-ignore lint/correctness/useExhaustiveDependencies: error.id is the intended trigger`. Keying on id (not message) means the same text arriving twice reopens the snackbar. MUI: `Snackbar open autoHideDuration={6000}` whose `onClose(_, reason)` ignores `"clickaway"` and otherwise closes, containing `Alert severity="error" variant="filled" onClose={close}` that shows `error?.message`.
+Props: `{ error: { id: number; message: string } | null }`. Holds its own `open` state. An effect keyed on the `error` object sets `open` to `error !== null`. Every event is a new object, so the same text arriving twice reopens the snackbar. It is not keyed on `error.id`: the server's counter restarts at 1 after a server restart while the component survives the reconnect, so an id can repeat. MUI: `Snackbar open autoHideDuration={6000}` whose `onClose(_, reason)` ignores `"clickaway"` and otherwise closes, containing `Alert severity="error" variant="filled" onClose={close}` that shows `error?.message`.
 
 ### MUI 9 note
 
@@ -171,7 +171,7 @@ Connection lifecycle, implemented in one `useEffect(..., [])`:
 2. `onmessage`: `JSON.parse(event.data)` inside try/catch (ignore malformed frames). Switch on `type`:
    - `hello`: `setMe(msg.me)`, `setConnected(true)`, `attempt = 0`. Connected means "hello received", not merely "socket open", so controls stay disabled until the server has identified the user.
    - `state`: `setSnapshot(msg.snapshot)`.
-   - `error`: `setError({ id: msg.id, message: `${msg.message} (${msg.reason})` })`. The reason is in the text so users can report it. The id is the server's counter, so a repeated error with a new id reopens the snackbar.
+   - `error`: `setError({ id: msg.id, message: `${msg.message} (${msg.reason})` })`. The reason is in the text so users can report it. Each call creates a new object, which is what reopens the snackbar for a repeated error (the id is the server's counter and can repeat after a server restart).
    - `searchResults`: keep it only if `msg.query` equals the latest query sent (a ref); otherwise drop it as stale. If kept, `setSearchResults({ query: msg.query, items: msg.items, error: msg.error, pending: false })`.
    - Unknown types are ignored.
 3. `onclose(event)`: `socketRef.current = null`; `setConnected(false)`; if `cancelled` return. If `event.code === 4401` set `disconnectedReason` to `"unauthenticated"` and return; if `event.code === 1008` set `"bad_origin"` and return (both terminal: no retry, no timer). Otherwise schedule a retry: `const delay = Math.min(10_000, 500 * 2 ** attempt) * (0.5 + Math.random() / 2); attempt += 1; timer = window.setTimeout(connect, delay)`.
@@ -183,7 +183,7 @@ StrictMode safety: in development React mounts, unmounts and re-mounts the effec
 
 Optional but recommended: inside the same effect add listeners for `window` `online` and `document` `visibilitychange` (when `document.visibilityState === "visible"`). If not cancelled, no terminal reason set, and there is no socket currently OPEN or CONNECTING, clear any pending timer, set `attempt = 0` and call `connect()` immediately. Remove both listeners in cleanup. This helps laptops that sleep and iframes in background tabs.
 
-Search (`search(query)`): `useCallback` with an empty dependency list. It trims the query. Under 2 characters it cancels any pending debounce timer, clears `latestQuery` and sets `searchResults` to null, and sends nothing. Otherwise it records the trimmed query in `latestQueryRef`, restarts a 400 ms debounce timer, and when the timer fires it calls `send({ type: "searchTickets", query })` and, if that returned true, sets `searchResults` to `{ query, items: [], error: null, pending: true }`. Server `searchResults` messages are delivered only to the requester. The debounce timer is cleared on unmount, and `searchResults` is left as is on socket close (it is cleared the next time the user types).
+Search (`search(query)`): `useCallback` with an empty dependency list. It trims the query. Under 2 characters it cancels any pending debounce timer, clears `latestQuery` and sets `searchResults` to null, and sends nothing. Otherwise it records the trimmed query in `latestQueryRef`, restarts a 400 ms debounce timer, and when the timer fires it calls `sendSearch(query)`, which calls `send({ type: "searchTickets", query })` and, if that returned true, sets `searchResults` to `{ query, items: [], error: null, pending: true }`. The hook also watches `snapshot.queueSettings.projectKey`: when it changes while a query is active, it cancels the debounce and calls `sendSearch(latestQuery)` at once (or sets `searchResults` to null if the socket is down), so another player's project change never leaves the old project's results on screen. The server drops the superseded search, so the old project's result normally never arrives. Server `searchResults` messages are delivered only to the requester. The debounce timer is cleared on unmount, and `searchResults` is left as is on socket close (it is cleared the next time the user types).
 
 `send(cmd)`: wrapped in `useCallback` with an empty dependency list so its identity is stable. It reads `socketRef.current`; if that is null or `readyState !== WebSocket.OPEN`, return `false` (drop the command; never queue). Otherwise `socket.send(JSON.stringify(cmd))` and return `true`.
 
@@ -313,7 +313,7 @@ Responsive rules:
 
 - Breakpoints: laptop widths are the target. At `lg` (1200px) and up: two columns (queue 4 and main 8 of 12) with independent scrolling and the single-row sticky bottom bar (section 2, Layout.tsx). Below `lg`: everything stacks full width in the order Queue, ticket view, then the bottom bar (players, Deck, ActionBar stacked), the bar is not sticky and the page scrolls. No phone-specific work beyond "nothing breaks": no horizontal page scroll, and the Deck still wraps.
 - Layout width: `Container maxWidth={false}` uses the whole page, with `px: { xs: 2, lg: 3 }` side gutters and no `maxWidth` cap.
-- ActionBar is always a single row. Below `lg` the bottom bar stacks its three sections, and the ActionBar row may wrap through `useFlexGap`; if buttons crowd, let the row `flexWrap: "wrap"`.
+- ActionBar is one row that wraps (`flexWrap: "wrap"` with `useFlexGap`) so the controls and the save alert never overflow below `lg`.
 - Deck wraps (`flexWrap`) when its section is narrower than ten cards. Cards stay at least 48px wide and 64px tall; that height sets the 88px minimum of the bottom bar.
 - The header is a fixed 48px single row. The title is hidden below `md`, and the queue selects shrink to `minWidth` 110 at `xs` so the header does not overflow on phones.
 - No horizontal page scroll at 1000px or at 1440px. Verify by resizing the browser.

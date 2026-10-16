@@ -50,6 +50,16 @@ export function useGameSocket(): {
     return true;
   }, []);
 
+  // Sends the search and shows the pending state. Returns false when the socket is down.
+  const sendSearch = useCallback(
+    (query: string): boolean => {
+      const sent = send({ type: "searchTickets", query });
+      if (sent) setSearchResults({ query, items: [], error: null, pending: true });
+      return sent;
+    },
+    [send],
+  );
+
   const search = useCallback(
     (raw: string) => {
       const query = raw.trim();
@@ -60,14 +70,25 @@ export function useGameSocket(): {
         return;
       }
       latestQueryRef.current = query;
-      searchTimerRef.current = window.setTimeout(() => {
-        if (send({ type: "searchTickets", query })) {
-          setSearchResults({ query, items: [], error: null, pending: true });
-        }
-      }, SEARCH_DEBOUNCE_MS);
+      searchTimerRef.current = window.setTimeout(() => sendSearch(query), SEARCH_DEBOUNCE_MS);
     },
-    [send],
+    [sendSearch],
   );
+
+  // The project is shared room state, so another player can change it under an active search.
+  // Results for the old project would then stay on screen under the new one. Re-run the search
+  // at once (no debounce, since nobody is typing) and drop the old results if it cannot be sent.
+  // The server cancels the superseded search, so the old project's result normally never arrives.
+  const projectKey = snapshot?.queueSettings.projectKey ?? null;
+  const lastProjectKeyRef = useRef<string | null>(projectKey);
+  useEffect(() => {
+    if (lastProjectKeyRef.current === projectKey) return;
+    lastProjectKeyRef.current = projectKey;
+    const query = latestQueryRef.current;
+    if (query === null) return;
+    window.clearTimeout(searchTimerRef.current);
+    if (!sendSearch(query)) setSearchResults(null);
+  }, [projectKey, sendSearch]);
 
   // Clear the pending debounce on unmount.
   useEffect(() => () => window.clearTimeout(searchTimerRef.current), []);
