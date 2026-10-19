@@ -8,13 +8,14 @@ JIRA_BASE_URL=
 JIRA_API_TOKEN_USERNAME=
 JIRA_API_TOKEN_PASSWORD=
 JIRA_DEFAULT_PROJECT=
-JIRA_NEEDS_POINTING_LABEL=needs-pointing
+# Optional: board name or numeric id (the number in .../boards/123); needs JIRA_DEFAULT_PROJECT
+JIRA_DEFAULT_BOARD=
 # Optional: skip Story Points field discovery
 JIRA_STORY_POINTS_FIELD=
 
 # Server
-PORT=3838
-LOG_LEVEL=info
+PORT=
+LOG_LEVEL=
 # Optional: comma-separated Origin hosts allowed on the WebSocket (defaults to the Host header)
 ALLOWED_ORIGINS=
 
@@ -26,8 +27,8 @@ IDENTITY_USERNAME_HEADER=
 IDENTITY_USER_ID_QUERY=
 IDENTITY_USERNAME_QUERY=
 
-# Local-only identity (ignored when NODE_ENV=production)
-DEV_USER_ID=1
-DEV_USERNAME=localdev
+# Local-only identity (ignored in production)
+DEV_USER_ID=
+DEV_USERNAME=
 # Set to 1 to allow ?devUser=<name> for multi-player local testing
-ALLOW_DEV_USER=1
+ALLOW_DEV_USER=

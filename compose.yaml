@@ -1,0 +1,36 @@
+# Starts Pointing Poker from the local Dockerfile: `docker compose up --build`.
+#
+# Identity comes only from the auth proxy's identity headers. Set IDENTITY_USER_ID_HEADER and
+# IDENTITY_USERNAME_HEADER in .env (names only, for example X-User-Id and X-Username) and send
+# those headers on each request. The image runs NODE_ENV=production, so the ?devUser= shortcut
+# does not work here. Use `npm run dev` for browser play.
+#
+# Settings come from an optional .env file next to this one. The app also needs JIRA_BASE_URL
+# and the rest of the variables listed in docs/spec/env-example.txt to be fully usable.
+services:
+  app:
+    build: .
+    image: pointing-poker:local
+    # Matches scripts/docker-build.sh; runs under emulation on Apple Silicon.
+    platform: linux/amd64
+    # Identity headers are trusted and there is no auth proxy locally, so bind to localhost; set HOST_BIND=0.0.0.0 only on a trusted network.
+    ports:
+      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3838}:3838"
+    env_file:
+      - path: .env
+        required: false
+    # The image sets NODE_ENV=production. Pin it here too: environment beats env_file, so a blank
+    # NODE_ENV in .env cannot switch the container to development mode. PORT is pinned for the
+    # same reason: the mapping and healthcheck use 3838, so a PORT in .env must not move the app.
+    # HOST_PORT is the way to change the external port.
+    environment:
+      NODE_ENV: production
+      PORT: "3838"
+    restart: unless-stopped
+    healthcheck:
+      # The alpine image ships no curl, so use Node's built-in fetch.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3838/api/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

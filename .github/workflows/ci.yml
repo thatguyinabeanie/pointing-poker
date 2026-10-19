@@ -7,8 +7,9 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same ref cancels the older run. For main that also cancels an in-flight
-# publish, so the last merge always wins the :latest tag.
+# A newer push to the same ref cancels the older run, including an in-flight publish. On main
+# that means the last merge always wins the :latest tag; on a branch, the newest push wins the
+# branch tag.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -48,7 +49,10 @@ jobs:
 
   publish:
     needs: checks
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Every branch push publishes, so a branch can be tried on the hosting platform before it
+    # merges. Never on pull_request: that keeps the Docker Hub secrets away from fork PRs, and a
+    # same-repo PR already gets its image from the branch push. Tag pushes are skipped.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -64,13 +68,21 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # prefix= drops the default "sha-" so the tag is the bare short SHA, like the local scripts.
+      # type=ref,event=branch adds the branch name, sanitized for Docker (build/v1 -> build-v1).
+      # The suffixed copy (build-v1-57) is a fixed tag per CI run, since the plain branch tag
+      # moves on every push. run_number is the workflow's run counter; a re-run keeps it.
+      # :latest is what the platform deploys, so only the default branch may move it; a branch
+      # push must never overwrite it. For the same reason a branch literally named "latest" gets
+      # no plain branch tag (it would be :latest); its suffixed tag, latest-57, is harmless.
       - id: meta
         uses: docker/metadata-action@v6
         with:
           images: gabemendoza1/pointing-poker
           tags: |
             type=sha,format=short,prefix=
-            type=raw,value=latest
+            type=ref,event=branch,enable=${{ github.ref_name != 'latest' }}
+            type=ref,event=branch,suffix=-${{ github.run_number }}
+            type=raw,value=latest,enable={{is_default_branch}}
 
       # GitHub-hosted runners are linux/amd64, which is what the hosting platform runs.
       - uses: docker/build-push-action@v7

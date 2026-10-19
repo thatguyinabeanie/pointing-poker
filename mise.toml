@@ -2,3 +2,16 @@
 # Keep in sync with .node-version, which the Dockerfile asserts against its FROM tag.
 node = "26"
 npm = "12"
+python = "3.13"
+uv = "latest"   # Fast dependency installer
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[settings]
+python.uv_venv_create_args = ["--seed"] # Include pip for compatibility
+
+[hooks]
+postinstall = """
+npm ci
+"""
