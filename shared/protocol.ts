@@ -12,6 +12,24 @@ export interface TicketComment {
   bodyHtml: string;
 }
 
+export interface TicketHistoryChange {
+  // Jira's display name for the field, e.g. "status" or "Story Points".
+  field: string;
+  // Plain text from Jira's fromString and toString; null when Jira had no value.
+  from: string | null;
+  to: string | null;
+  // True for long text fields: the client shows "edited" and drops the values.
+  edited: boolean;
+}
+
+export interface TicketHistoryEntry {
+  id: string;
+  // Jira displayName, or "Unknown" when Jira sent none.
+  author: string;
+  createdAt: string;
+  changes: TicketHistoryChange[];
+}
+
 export interface Ticket {
   key: string;
   summary: string;
@@ -26,6 +44,31 @@ export interface Ticket {
   assignee: string | null;
   priority: string | null;
   labels: string[];
+  // Changelog entries are sent newest first. historyTruncated is true when older
+  // entries were left out to stay under the cap.
+  history: TicketHistoryEntry[];
+  historyTruncated: boolean;
+}
+
+export interface SessionHistoryEntry {
+  key: string;
+  summary: string;
+  issueType: string;
+  // Jira browse link for the ticket, used by the row's key link.
+  url: string;
+  // From the revealed stats.
+  average: number | null;
+  min: number | null;
+  max: number | null;
+  consensus: boolean;
+  // Players with a vote at reveal.
+  voters: number;
+  // Revealed more than once in this room.
+  revoted: boolean;
+  // Set when Save to Jira succeeds for this key.
+  savedPoints: number | null;
+  // ISO time of the latest reveal.
+  revealedAt: string;
 }
 
 export type JiraSave =
@@ -98,6 +141,8 @@ export interface Snapshot {
   queue: QueueState;
   projects: JiraProject[];
   boards: JiraBoard[];
+  // Newest first. Same list for every viewer.
+  history: SessionHistoryEntry[];
 }
 
 export type ClientCommand =

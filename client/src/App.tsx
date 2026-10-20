@@ -10,9 +10,9 @@ import { Deck } from "./components/Deck.tsx";
 import { ErrorSnackbar } from "./components/ErrorSnackbar.tsx";
 import { Header } from "./components/Header.tsx";
 import { Layout } from "./components/Layout.tsx";
+import { LeftPanel } from "./components/LeftPanel.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
-import { QueuePanel } from "./components/QueuePanel.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
 
@@ -116,7 +116,8 @@ export function App() {
     content = (
       <Layout
         left={
-          <QueuePanel
+          <LeftPanel
+            history={snapshot.history}
             queue={snapshot.queue}
             searchResults={searchResults}
             currentKey={snapshot.ticket?.key ?? null}

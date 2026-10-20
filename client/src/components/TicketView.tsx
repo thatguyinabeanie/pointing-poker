@@ -13,8 +13,9 @@ import type { Ticket } from "../../../shared/protocol.ts";
 import { HtmlBody } from "./HtmlBody.tsx";
 import { IssueTypeIcon } from "./IssueTypeIcon.tsx";
 import { TicketComments } from "./TicketComments.tsx";
+import { TicketHistory } from "./TicketHistory.tsx";
 
-type TabId = "description" | "comments";
+type TabId = "description" | "comments" | "history";
 
 const STEPS = [
   "Pick a ticket from the queue",
@@ -187,6 +188,7 @@ export function TicketView({ ticket }: { ticket: Ticket | null }) {
             }
             sx={{ pr: 4 }}
           />
+          <Tab value="history" label="History" />
         </Tabs>
 
         {tab === "description" ? (
@@ -195,8 +197,10 @@ export function TicketView({ ticket }: { ticket: Ticket | null }) {
           ) : (
             <Typography color="text.secondary">No description</Typography>
           )
-        ) : (
+        ) : tab === "comments" ? (
           <TicketComments comments={ticket.comments} />
+        ) : (
+          <TicketHistory history={ticket.history} truncated={ticket.historyTruncated} />
         )}
       </Stack>
     </Paper>

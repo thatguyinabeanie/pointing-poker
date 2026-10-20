@@ -24,7 +24,7 @@ const PAGE_TOP_PADDING = 16;
 const BAR_GAP = 16;
 const PANE_MAX_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - var(${BOTTOM_BAR_HEIGHT_VAR}, ${BOTTOM_BAR_FALLBACK_HEIGHT}px) - ${PAGE_TOP_PADDING + BAR_GAP}px)`;
 
-// The queue pane is one third of the row by default (the old lg 4/12 split), never narrower than
+// The tickets pane (Queue and History) is one third of the row by default (the old lg 4/12 split), never narrower than
 // the minimum, never wider than half the row. The viewer's choice is stored in px and clamped
 // again on every render, so a stored value from a wider window cannot overflow a narrow one.
 const QUEUE_WIDTH_KEY = "pp.layout.queueWidth";
@@ -140,7 +140,7 @@ export function Layout({ left, main, bottom }: Props) {
             minWidth: 0,
           }}
         >
-          <Pane label="Ticket queue">{left}</Pane>
+          <Pane label="Tickets">{left}</Pane>
         </Box>
         <Box sx={{ display: { xs: "none", lg: "flex" }, alignSelf: "stretch" }}>
           <ResizeHandle

@@ -19,16 +19,22 @@ client/src/theme.ts               createTheme with Lato typography (already exis
 client/src/App.tsx                owns useGameSocket, fills the Layout slots, maps UI actions to commands
 client/src/useGameSocket.ts       WebSocket client hook (section 3)
 client/src/lib/estimate.ts        suggestPoints (reference, copy as is)
-client/src/lib/initials.ts        initials(name) for avatars (Players, TicketComments)
+client/src/lib/initials.ts        initials(name) for avatars (Players, EntryRow)
+client/src/lib/relativeTime.ts    relativeTime(iso): short "2d" labels (EntryRow, SessionHistory)
 client/src/components/Header.tsx             slim light header: queue controls, title, status dot and username
 client/src/components/layoutConstants.ts     HEADER_HEIGHT (48), shared by Header and Layout
 client/src/components/QueueControls.tsx      Project and Board selects and Refresh (moved out of QueuePanel)
+client/src/components/LeftPanel.tsx          the left pane's card: Queue and History tabs
 client/src/components/QueuePanel.tsx         search, queue sections, two-line clickable rows
-client/src/components/Layout.tsx             three slots (left, main, bottom), the queue pane width and the bottom bar height
+client/src/components/SessionHistory.tsx     this room's revealed tickets, newest first
+client/src/components/TicketRowFrame.tsx     the two-line clickable row shared by the queue and session history
+client/src/components/Layout.tsx             three slots (left, main, bottom), the tickets pane width and the bottom bar height
 client/src/components/ResizeHandle.tsx       draggable, keyboard-operable separator between the panes
 client/src/components/IssueTypeIcon.tsx      Jira issue type to icon, with a default
 client/src/components/TicketView.tsx         empty-state guide, or ticket header plus Description and Comments tabs
 client/src/components/TicketComments.tsx     comments list, rendered inside TicketView
+client/src/components/TicketHistory.tsx      Jira changelog list, rendered inside TicketView
+client/src/components/EntryRow.tsx           avatar, author and time header shared by comments and history
 client/src/components/HtmlBody.tsx           the only dangerouslySetInnerHTML in the client
 client/src/components/Players.tsx            avatars holding cards, voted count and stats
 client/src/components/Deck.tsx
@@ -50,11 +56,23 @@ Props: `{ connected: boolean; meName?: string; controls?: ReactNode }`. A `Box c
 
 Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header gives it the full width below `sm`, see Header). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads.
 
+### components/LeftPanel.tsx
+
+Props: the `QueuePanel` props plus `history: SessionHistoryEntry[]` (App passes `snapshot.history`). It owns the left pane's `Paper` and its two tabs, "Queue" and "History"; `QueuePanel` no longer draws an outer `Paper`. The History tab label carries a count badge (`history.length`, shown at zero). The tab bar is sticky at the top of the pane, because `Layout`'s pane is the element that scrolls. The selected tab is per tab of the browser: `sessionStorage` key `pp.left.tab` (`"queue"` or `"history"`, anything else reads as `"queue"`) through `readJson` and `writeJson`. Both panels stay mounted and the inactive one is hidden (`hidden`), because remounting `QueuePanel` would re-send its restored search query to Jira on every tab switch. `SessionHistory` gets `history`, `currentKey`, `disabled` and `onPick` from the same props.
+
+### components/SessionHistory.tsx
+
+Props: `{ history: SessionHistoryEntry[]; currentKey: string | null; disabled: boolean; onPick: (key: string) => void }`. With no rows it shows the muted text "Nothing pointed yet in this room." Otherwise a dense `List` with one `TicketRowFrame` per row, in array order (the server sends newest first). The badge is the saved points, or "–" when the ticket was revealed but not saved. The second line is a detail line, also set as its `title` tooltip: `avg {average}`, then "consensus" or `{min}–{max}`, then "re-voted" when `revoted`, then "✓ saved" when `savedPoints` is set, then `relativeTime(revealedAt)`, joined with " · ". When `average` is null (only non-numeric votes) the avg and range parts are left out. Clicking a row calls `onPick(key)`, which loads that ticket again for the room, exactly like a queue row, and the current ticket's row is highlighted and not clickable. The history is room state and lasts until a server restart; it is not stored in the browser.
+
+### components/TicketRowFrame.tsx
+
+Props: `{ issueType; ticketKey; url; isCurrent; disabled; onPick; badge: ReactNode; secondLine: ReactNode }`. The row layout that used to live inside `QueuePanel`'s `TicketRows`, extracted so the queue, the search results and `SessionHistory` look and behave the same: type icon, key as a `Link` to `url` (new tab, `rel="noopener noreferrer"`, its click does not pick the ticket), a badge on the right, then the second line on one line with ellipsis. The whole row is a `ListItemButton`; the current row is highlighted with a left accent border, has `aria-current`, and ignores clicks. Other rows are disabled while `disabled` is true. `QueuePanel` passes the status as the badge and the summary as the second line.
+
 ### components/QueuePanel.tsx
 
 Props: `{ queue: QueueState; searchResults: SearchResults | null; currentKey: string | null; disabled: boolean; onPick: (key: string) => void; onSearch: (query: string) => void; boardUrl: string | null }`. The settings row (Project, Board, Refresh) moved to `QueueControls` in the header, so the rows below that mention it no longer apply to this component. `boardUrl` is computed in `App.tsx` (memoized; the Jira origin comes from the first item's `url`, and the URL needs a project key and a board id) and is the target of the "Open the full board in Jira" link. Rows are two lines (type icon, key link and status badge; then the summary with ellipsis) and the whole row is a button that calls `onPick`; the current ticket's row is highlighted and not clickable (design spec section 3). `SearchResults` is `{ query: string; items: QueueItem[]; error: string | null; pending: boolean }`, exported from `QueuePanel.tsx` and structurally identical to the hook's `searchResults` value. Types come from `shared/protocol.ts`. The team picks the next ticket from a shared queue of unpointed Jira tickets instead of typing a key. Settings are shared room state: changing one changes the queue for everyone.
 
-MUI: `Paper sx={{ p: 2 }}` > `Stack spacing={2}` with these rows, top to bottom:
+MUI: `Stack spacing={2}` (the `Paper` and the padding now come from `LeftPanel`) with these rows, top to bottom:
 
 1. Settings: not part of this component. The Project and Board selects and Refresh live in `QueueControls` in the header. The component starts with the search box.
 2. Search: a `TextField size="small"` labeled "Search tickets (key or text)" with a `SearchIcon` start adornment. Local state holds the text; every change calls `onSearch(text)` (the hook debounces and ignores short queries). The text is persisted per tab in `sessionStorage` key `pp.search.query` (a JSON string; removed when the box is cleared) and restored on load. A search sent while the socket is down is dropped, so an effect keyed on `disabled` re-sends a non-empty query each time the connection comes up, which brings restored results back after a refresh and refreshes them after a reconnect. Below it, driven by `searchResults`: a `LinearProgress aria-label="Searching"` while `pending`; an inline `Alert severity="warning"` with `error` when not pending and `error` is set; "No matches" when not pending and `items` is empty; otherwise the result rows. When `searchResults` is null nothing renders.
@@ -64,21 +82,21 @@ Rows (queue and search results share one internal `TicketRows` component): two l
 
 ### components/Layout.tsx
 
-Props: `{ left: ReactNode; main: ReactNode; bottom: ReactNode }`. It holds one piece of state, the queue pane width, and no data. It renders a `Container maxWidth={false}` with `sx={{ px: { xs: 2, lg: 3 } }}` (full width), then a flex row of the two panes, then the bottom bar.
+Props: `{ left: ReactNode; main: ReactNode; bottom: ReactNode }`. It holds one piece of state, the tickets pane width, and no data. It renders a `Container maxWidth={false}` with `sx={{ px: { xs: 2, lg: 3 } }}` (full width), then a flex row of the two panes, then the bottom bar.
 
 | Slot | Position | Content from App |
 |---|---|---|
-| `left` | queue pane, fixed px width at `lg+` | `QueuePanel` (queue and search) |
+| `left` | left pane, fixed px width at `lg+` | `LeftPanel` (Queue and History tabs) |
 | `main` | `flex: 1; minWidth: 0` | `TicketView` |
 | `bottom` | outside the row, full width | players, `Deck`, `ActionBar` in a three-column grid |
 
 Below `lg` the row is a column (gap 16px) in the order Queue, ticket view, bottom bar, and there is no handle. The bottom bar is a sibling of the row inside the Container (visually the full width). It must not be inside the row: `position: sticky` only works inside a parent taller than the sticky element, and a wrapper holding only the bar is exactly as tall as the bar.
 
-Resizable queue pane (`lg+`). Between the panes sits `ResizeHandle`: a 9px hit area with a 1px `divider` line and a small grip, and the line turns `primary.main` and 2px wide on hover, focus-visible and while dragging. The default queue width is one third of the row, the clamp is 260px to half the row, and it is re-clamped on window resize (a `ResizeObserver` on the row). Dragging uses pointer events with `setPointerCapture` (mouse, touch, pen) and sets `user-select: none` on the body. Double-click resets to the default. The handle is `role="separator"` with `aria-orientation="vertical"`, `aria-label="Resize ticket queue"` and percentage `aria-valuenow/min/max`; ArrowLeft and ArrowRight move 16px, Home and End jump to the min and max. The width is stored in px in `localStorage` under `pp.layout.queueWidth` through `readJson` and `writeJson` in `storage.ts`, written on drag end and on key changes (not on every pointermove) and removed on reset. Invalid stored values are ignored.
+Resizable tickets pane (`lg+`). Between the panes sits `ResizeHandle`: a 9px hit area with a 1px `divider` line and a small grip, and the line turns `primary.main` and 2px wide on hover, focus-visible and while dragging. The default queue width is one third of the row, the clamp is 260px to half the row, and it is re-clamped on window resize (a `ResizeObserver` on the row). Dragging uses pointer events with `setPointerCapture` (mouse, touch, pen) and sets `user-select: none` on the body. Double-click resets to the default. The handle is `role="separator"` with `aria-orientation="vertical"`, `aria-label="Resize tickets pane"` and percentage `aria-valuenow/min/max`; ArrowLeft and ArrowRight move 16px, Home and End jump to the min and max. The width is stored in px in `localStorage` under `pp.layout.queueWidth` through `readJson` and `writeJson` in `storage.ts`, written on drag end and on key changes (not on every pointermove) and removed on reset. Invalid stored values are ignored.
 
 Bottom bar (rendered by Layout around the `bottom` slot): a `Paper elevation={4} square` with `p: 1.5`, `mt: "16px"`, `boxSizing: "border-box"`, `position: { xs: "static", lg: "sticky" }`, `bottom: 0`, `zIndex: (theme) => theme.zIndex.appBar` (above pane content, below menus, dialogs and the snackbar), `minHeight: { lg: 88 }`, `maxHeight: { lg: 140 }` and `overflowY: { lg: "auto" }`. The bar sizes to its content (so a second row of players is never hidden) and scrolls only past about two player rows. Not sticky and no height limits below `lg`.
 
-Pane scrolling (lg and up). Each pane's content sits in a `Box component="section"` with an `aria-label` ("Ticket queue", "Ticket") and `sx={{ maxHeight: { lg: PANE_MAX_HEIGHT }, overflowY: { lg: "auto" } }}`. The heights are constants at the top of `Layout.tsx`, in px, except the bottom bar, which `Layout` measures:
+Pane scrolling (lg and up). Each pane's content sits in a `Box component="section"` with an `aria-label` ("Tickets", "Ticket") and `sx={{ maxHeight: { lg: PANE_MAX_HEIGHT }, overflowY: { lg: "auto" } }}`. The heights are constants at the top of `Layout.tsx`, in px, except the bottom bar, which `Layout` measures:
 
 - `HEADER_HEIGHT = 48`, imported from `layoutConstants.ts` (the same constant `Header` uses for its own height).
 - Bottom bar: auto height. `BOTTOM_BAR_FALLBACK_HEIGHT = 88` is the minimum (the Deck cards are 64px tall plus 12px padding top and bottom) and the fallback before the first measurement; `BOTTOM_BAR_MAX_HEIGHT = 140` caps it at about two player rows. A `ResizeObserver` on the bar writes its rendered height to the `--bottom-bar-height` CSS variable on the Container, and the pane max-height reads that variable, so the panes shrink when the bar grows.
@@ -89,15 +107,23 @@ To keep the sticky bar on the bottom edge when the panes are short, the Containe
 
 ### components/TicketView.tsx
 
-Props: `{ ticket: Ticket | null }`. Display only; QueuePanel owns picking and loading. Replaces `TicketDescription`. With no ticket it shows the empty-state guide: "Pick a ticket to start" and three numbered steps (pick a ticket from the queue, everyone picks a card, reveal and save points to Jira). With a ticket it shows a header and two tabs.
+Props: `{ ticket: Ticket | null }`. Display only; QueuePanel and SessionHistory own picking and loading. Replaces `TicketDescription`. With no ticket it shows the empty-state guide: "Pick a ticket to start" and three numbered steps (pick a ticket from the queue, everyone picks a card, reveal and save points to Jira). With a ticket it shows a header and three tabs.
 
 Header: a small line with the issue-type icon, type name, key as a link and an icon link to Jira (both `target="_blank"`, `rel="noopener noreferrer"`; this replaces the "Open in Jira" button, and it is still the way to edit text in Jira since the app never edits tickets); the summary as the `h2`; a "Current points" box on the right (the value, or "–" when unset); and a labeled row (label above value) for Status, Priority, Assignee ("Unassigned" when null) and Labels (omitted when empty).
 
-Tabs: "Description" and "Comments" with a count badge. The selected tab resets to Description when a different ticket loads. The description is `HtmlBody`, or a muted "No description". `TicketComments` renders the Comments tab (below).
+Tabs: "Description", "Comments" (with a count badge) and "History". The selected tab resets to Description when a different ticket loads. The description is `HtmlBody`, or a muted "No description". `TicketComments` renders the Comments tab and `TicketHistory` the History tab (below).
 
 ### components/TicketComments.tsx
 
 Props: `{ ticket: Ticket | null }`, used inside `TicketView`. A muted "No comments" or a `List` with one item per comment in array order (the server sends oldest first and the client never sorts): initials avatar, author, relative time from `createdAt` inside a `<time dateTime>` with the full date in a tooltip, then `HtmlBody`.
+
+### components/EntryRow.tsx
+
+Props: `{ author: string; createdAt: string; children: ReactNode }`. The `ListItem` shared by the comments and history lists: initials avatar, author, and the relative time from `createdAt` inside a `<time dateTime>` with the full date in a tooltip, then the children. Extracted so the two lists cannot drift apart.
+
+### components/TicketHistory.tsx
+
+Props: `{ history: TicketHistoryEntry[]; truncated: boolean }`, used inside `TicketView` for the History tab. With no entries it shows the muted text "No history". Otherwise a `List` with one `EntryRow` per entry in array order (newest first; the client never sorts), each holding one line per change: the field name in bold, then the old value struck through (`<del>`), an arrow and the new value (`<ins>`). An empty side shows "–". A change with `edited: true` shows the field name and the word "edited" with no values. Values are React text children, never HTML, and long ones wrap. When `truncated` is true a caption "Showing the latest 100 changes" follows the list.
 
 ### components/HtmlBody.tsx and the safety rule
 
@@ -207,7 +233,7 @@ Content states, in priority order:
 
 | Slot | Content |
 |---|---|
-| `left` | `<QueuePanel ... />` |
+| `left` | `<LeftPanel ... />` (wraps `QueuePanel` and `SessionHistory`) |
 | `main` | `<TicketView ticket={snapshot.ticket} />` |
 | `bottom` | a `Box` with `display: "grid"` and `gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" }` holding `<Box sx={{ minWidth: 0 }}><Players ... /></Box>`, `<Deck ... />` and `<Box sx={{ justifySelf: { lg: "end" } }}><ActionBar ... /></Box>` |
 
@@ -225,6 +251,7 @@ Props per component:
 |---|---|
 | Header | `connected`, `meName={me?.username}`, `controls` (QueueControls once a snapshot exists) |
 | QueueControls | `settings={snapshot.queueSettings}`, `projects`, `boards`, `disabled`, `refreshing={snapshot.queue.loading}`, `onChangeSettings`, `onRefresh` |
+| LeftPanel | `history={snapshot.history}`, plus the `QueuePanel` props below |
 | QueuePanel | `queue={snapshot.queue}`, `searchResults` (from the hook), `currentKey={snapshot.ticket?.key ?? null}`, `disabled`, `onPick`, `onSearch={search}`, `boardUrl` |
 | TicketView | `ticket={snapshot.ticket}` |
 | Players | `players={snapshot.players}`, `phase={snapshot.phase}`, `meId={me?.userId ?? null}`, `stats={snapshot.stats}` |
@@ -301,9 +328,9 @@ Accessibility checklist (all already satisfied by the reference components; do n
 - Each player's card has `role="img"` and an `aria-label` such as "Ana has voted", "Ana has not voted" or "Ana voted 5, highest"; the vote state is never conveyed by color alone (face-down versus dashed card, and outliers also carry text).
 - The queue Selects have visible labels linked with `InputLabel` and `labelId`; the Refresh icon button has `aria-label="Refresh queue"`; the search `TextField` has a visible label ("Search tickets (key or text)"); the progress bars have accessible labels.
 - Every interactive element is a native `button`, `input` or `a`, so Tab and Enter and Space work with no extra code. Do not add click handlers to non-interactive elements.
-- Heading hierarchy: exactly one `h1` (in Header); the ticket summary and "Comments (n)" are `h2`; "Description" is `h3` under the summary. Headings inside server HTML are styled at body size by `HtmlBody` (the sanitizer allowlist decides whether they appear at all).
-- Each pane is a `section` with an `aria-label` ("Ticket queue", "Ticket"), and the players are a `ul` labeled "Participants", so screen reader users can jump between them.
-- Comments are a real list (`List` renders `ul` with `li` items), so the count is announced. Each date is a `<time>` element with `dateTime`.
+- Heading hierarchy: exactly one `h1` (in Header); the ticket summary is `h2`, and "Description" is `h3` under the summary. The Description, "Comments (n)" and "History" tab labels are tabs, not headings. Headings inside server HTML are styled at body size by `HtmlBody` (the sanitizer allowlist decides whether they appear at all).
+- Each pane is a `section` with an `aria-label` ("Tickets", "Ticket"), and the players are a `ul` labeled "Participants", so screen reader users can jump between them.
+- Comments, ticket history and session history are real lists (`List` renders `ul` with `li` items), so the count is announced. Each date is a `<time>` element with `dateTime`. History old and new values use `<del>` and `<ins>`, so the change is not conveyed by strike-through alone.
 - Keyboard and the sticky bar: the bar is last in DOM order and every control in it is a native button or select, so Tab reaches it after the panes. Sticky positioning never covers a focused element in a pane, because the pane `maxHeight` stops above the bar, and the browser scrolls a focused element into view inside its pane. Do not add `tabIndex` to the panes. The player avatars are not interactive and are not tab stops; the resize handle between the panes is a tab stop.
 - The page has exactly one `h1` (in Header). Ticket key links (in TicketView, the queue and the search results) are the only external links and use `rel="noopener noreferrer"`.
 - The loading spinner has an accessible label. The snackbar's `Alert` has the implicit `role="alert"` so errors are announced.
@@ -333,7 +360,7 @@ Run `npm run lint`, `npm run tsc:check` and `npm run build`; all must pass with 
 8. Open the app with `ALLOW_DEV_USER` unset and no identity headers: the page shows "Open this app inside the hosting platform" and the browser network panel shows no reconnect attempts after the 4401 close.
 9. Resize to 1000px wide (below the `lg` breakpoint): no horizontal scroll, sections stack, controls are usable. Tab through the page with the keyboard and confirm every control is reachable and the pressed card state is announced.
 10. React StrictMode is on in dev: confirm in the server log that each page opens one lasting connection, not a growing number of them, and that edits to a component hot-update without a full reload.
-11. Layout at 1440px wide: two columns visible side by side (queue left, ticket view right) and the one-row bottom bar always visible at the bottom edge: players left, Deck centered, actions right. Load a ticket with a long description and many comments: the ticket pane scrolls independently, and the queue pane and bottom bar do not move. The page itself has no vertical scrollbar.
+11. Layout at 1440px wide: two columns visible side by side (queue left, ticket view right) and the one-row bottom bar always visible at the bottom edge: players left, Deck centered, actions right. Load a ticket with a long description and many comments: the ticket pane scrolls independently, and the tickets pane and bottom bar do not move. The page itself has no vertical scrollbar.
 12. Bottom bar by phase: in `voting` the right section shows Reveal and Reset only; in `revealed` it shows the Story points select, Save to Jira and Next ticket, and the left section shows each player's card face-up plus "Avg", range and "Consensus" or "No consensus"; unselected cards are dimmed and the selected card stays filled. Shrink the window so the bar is crowded: the players wrap inside the left cell and the Deck stays centered. Saved and error alerts appear compactly at the far right.
 13. Below 1200px wide (for example 1000px): everything stacks full width in the order Queue, ticket view, bottom bar; the bar is not sticky; nothing is clipped and there is no horizontal scroll, including with a wide code block or table in the description.
 14. Ticket rendering: a description with a bulleted list, a link, a code block and a table renders with bullets, a clickable link (opens in a new tab), monospace code and a horizontally scrollable `pre`. An image in a description or comment appears as a link, not an `img`. Comments appear oldest first with author and a local date. A ticket with no description shows "No description"; one with no comments shows "Comments (0)" and "No comments". With no ticket loaded the main area shows the "Pick a ticket to start" guide. Tab reaches every control in the bottom bar. Click the Jira icon link in the ticket header: the ticket opens in a new tab and the app page keeps its state.
