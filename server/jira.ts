@@ -59,6 +59,7 @@ const MAX_HISTORY_VALUE_CHARS = 200;
 // Long text fields: the client shows "edited" instead of the values.
 const EDITED_FIELDS = new Set(["description", "environment"]);
 // Jira may answer with fewer entries than asked for, so paging is bounded rather than assumed.
+// The cap counts window requests only; the first probe request (which learns `total`) is extra.
 const MAX_HISTORY_REQUESTS = 10;
 const LIST_CACHE_MS = 10 * 60 * 1000;
 const MAX_PROJECTS = 500;

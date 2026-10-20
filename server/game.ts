@@ -144,9 +144,12 @@ const MAX_HISTORY = 50;
 
 // One row per ticket key: a re-reveal replaces the row, keeps its saved points and moves it to
 // the top. The array is replaced, never mutated, because viewFor hands it out by reference.
+// A reveal with zero votes records nothing: an empty reveal (for example right after reloading a
+// ticket from History) would otherwise wipe the row's stats and mark it re-voted.
 export function recordReveal(state: GameState, now: string): GameState {
   const { ticket } = state;
-  if (ticket === null) return state;
+  const voters = [...state.players.values()].filter((p) => p.vote !== null).length;
+  if (ticket === null || voters === 0) return state;
   const stats = summarize(state.players.values());
   const previous = state.history.find((row) => row.key === ticket.key);
   const row: SessionHistoryEntry = {
@@ -158,7 +161,7 @@ export function recordReveal(state: GameState, now: string): GameState {
     min: stats.min,
     max: stats.max,
     consensus: stats.consensus,
-    voters: [...state.players.values()].filter((p) => p.vote !== null).length,
+    voters,
     revoted: previous !== undefined,
     savedPoints: previous?.savedPoints ?? null,
     revealedAt: now,

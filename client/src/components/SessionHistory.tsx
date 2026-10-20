@@ -27,7 +27,10 @@ export function SessionHistory({ history, currentKey, disabled, onPick }: Props)
           disabled={disabled}
           onPick={onPick}
           badge={entry.savedPoints ?? "–"}
-          secondLine={<span title={detailLine(entry)}>{detailLine(entry)}</span>}
+          // The row shows no summary, so it goes in the hover title with the (possibly clipped) detail.
+          secondLine={
+            <span title={`${entry.summary}\n${detailLine(entry)}`}>{detailLine(entry)}</span>
+          }
         />
       ))}
     </List>

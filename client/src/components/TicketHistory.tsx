@@ -20,8 +20,10 @@ function ChangeLine({ change }: { change: TicketHistoryChange }) {
       ) : (
         <>
           {" "}
+          {/* An empty side is a plain span: <del> or <ins> around the placeholder would make
+              screen readers announce a deletion or insertion of nothing. */}
           <Typography
-            component="del"
+            component={change.from === null ? "span" : "del"}
             variant="body2"
             color="text.secondary"
             sx={{ textDecoration: change.from === null ? "none" : "line-through" }}
@@ -29,7 +31,11 @@ function ChangeLine({ change }: { change: TicketHistoryChange }) {
             {change.from ?? "–"}
           </Typography>{" "}
           →{" "}
-          <Typography component="ins" variant="body2" sx={{ textDecoration: "none" }}>
+          <Typography
+            component={change.to === null ? "span" : "ins"}
+            variant="body2"
+            sx={{ textDecoration: "none" }}
+          >
             {change.to ?? "–"}
           </Typography>
         </>
