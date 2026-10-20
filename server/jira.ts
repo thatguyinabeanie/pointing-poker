@@ -138,6 +138,7 @@ interface RawHistoryItem {
   field?: unknown;
   fieldId?: unknown;
   fromString?: unknown;
+  // Read only after a typeof string check, which keeps Object.prototype.toString out.
   toString?: unknown;
 }
 
@@ -355,11 +356,13 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     let startAt = 0;
     let wanted = MAX_HISTORY_ENTRIES;
     let start = 0;
+    let probed = false;
+    let windowRequests = 0;
     const raw: RawHistoryEntry[] = [];
-    let requests = 0;
 
-    while (requests < MAX_HISTORY_REQUESTS) {
-      requests += 1;
+    // The first request only learns `total`; it does not count against the window budget unless
+    // its page is reused (start is 0).
+    while (windowRequests < MAX_HISTORY_REQUESTS) {
       const res = await request(
         "GET",
         `${path}?startAt=${startAt}&maxResults=${MAX_HISTORY_ENTRIES}`,
@@ -376,25 +379,37 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         return empty;
       }
 
-      if (requests === 1) {
-        // First page tells us the size. When older entries must be skipped and this page
-        // started before the window, discard it and restart at the window's first entry.
+      if (!probed) {
+        probed = true;
         start = Math.max(0, page.total - MAX_HISTORY_ENTRIES);
         wanted = page.total - start;
         if (start > 0) {
+          // The probe began before the window, so discard it and restart at the window.
           startAt = start;
           continue;
         }
       }
 
+      windowRequests += 1;
       raw.push(...(page.values as RawHistoryEntry[]));
-      if (raw.length >= wanted || page.isLast === true || page.values.length === 0) break;
+      if (raw.length >= wanted) break;
+      // An empty page or isLast before the window is full means entries are missing.
+      if (page.isLast === true || page.values.length === 0) break;
       startAt += page.values.length;
+    }
+
+    // A short read could omit the newest changes while looking complete, so show none.
+    if (raw.length < wanted) {
+      opts.logger?.debug(
+        { key, reason: "short_read", read: raw.length, wanted },
+        "jira changelog short",
+      );
+      return empty;
     }
 
     const history = buildHistory(raw.slice(-MAX_HISTORY_ENTRIES));
     opts.logger?.debug(
-      { key, total: raw.length, kept: history.length, truncated: start > 0 },
+      { key, read: raw.length, kept: history.length, truncated: start > 0 },
       "jira changelog read",
     );
     return { history, truncated: start > 0 };
