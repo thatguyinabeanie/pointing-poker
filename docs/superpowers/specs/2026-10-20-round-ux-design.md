@@ -87,6 +87,13 @@ Builds after the history branch (`feat/history`, PR #3) merges, because both tou
 - The same server-side timer pattern as auto-reveal (one per room, cancelled on the events
   above); both deadlines are plain ISO times so every client shows the same countdown.
 
+## 7. Border around the loaded ticket's row
+
+- The queue (and search, and room-history) row for the ticket currently loaded gets a full
+  **2px `primary.main` border** with the theme's small radius, replacing the left-only accent
+  bar. The tinted background and `aria-current="true"` stay. The border is inset (outline or a
+  border with matching negative margin) so rows don't shift when the loaded ticket changes.
+
 ## Edge cases
 
 - Auto-reveal with one player: they vote, countdown, reveal. Fine for a solo check.
