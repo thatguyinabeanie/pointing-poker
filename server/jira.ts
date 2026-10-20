@@ -7,6 +7,8 @@ import type {
   QueueSettings,
   Ticket,
   TicketComment,
+  TicketHistoryChange,
+  TicketHistoryEntry,
 } from "../shared/protocol.ts";
 import { capSanitizedHtml, sanitizeJiraHtml } from "./sanitize.ts";
 
@@ -52,6 +54,12 @@ const BASE_FIELDS = "summary,issuetype,status,assignee,priority,labels,descripti
 const MAX_COMMENTS = 50;
 const MAX_DESCRIPTION_CHARS = 200_000;
 const MAX_COMMENT_CHARS = 20_000;
+const MAX_HISTORY_ENTRIES = 100;
+const MAX_HISTORY_VALUE_CHARS = 200;
+// Long text fields: the client shows "edited" instead of the values.
+const EDITED_FIELDS = new Set(["description", "environment"]);
+// Jira may answer with fewer entries than asked for, so paging is bounded rather than assumed.
+const MAX_HISTORY_REQUESTS = 10;
 const LIST_CACHE_MS = 10 * 60 * 1000;
 const MAX_PROJECTS = 500;
 const MAX_BOARDS = 500;
@@ -124,6 +132,20 @@ interface RawComment {
   author?: { displayName?: unknown } | null;
   created?: unknown;
   renderedBody?: unknown;
+}
+
+interface RawHistoryItem {
+  field?: unknown;
+  fieldId?: unknown;
+  fromString?: unknown;
+  toString?: unknown;
+}
+
+interface RawHistoryEntry {
+  id?: unknown;
+  author?: { displayName?: unknown } | null;
+  created?: unknown;
+  items?: unknown;
 }
 
 export function createJiraClient(opts: JiraClientOptions): JiraClient {
@@ -286,6 +308,98 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return buildComments(page.comments.slice(0, MAX_COMMENTS) as RawComment[]);
   }
 
+  function buildHistoryChange(item: RawHistoryItem): TicketHistoryChange | null {
+    if (typeof item.field !== "string") return null;
+    const from = typeof item.fromString === "string" ? item.fromString : null;
+    const to = typeof item.toString === "string" ? item.toString : null;
+    const edited =
+      EDITED_FIELDS.has(item.field.toLowerCase()) ||
+      (typeof item.fieldId === "string" && EDITED_FIELDS.has(item.fieldId.toLowerCase())) ||
+      (from?.length ?? 0) > MAX_HISTORY_VALUE_CHARS ||
+      (to?.length ?? 0) > MAX_HISTORY_VALUE_CHARS;
+    // Values are dropped for edited changes so long text never reaches the client.
+    return { field: item.field, from: edited ? null : from, to: edited ? null : to, edited };
+  }
+
+  // Input is oldest first (Jira's order); output is newest first. Entries with no usable
+  // changes are dropped, since the History tab would show an empty block.
+  function buildHistory(raw: RawHistoryEntry[]): TicketHistoryEntry[] {
+    const entries: TicketHistoryEntry[] = [];
+    raw.forEach((e, i) => {
+      const items = Array.isArray(e?.items) ? (e.items as RawHistoryItem[]) : [];
+      const changes = items
+        .map((item) => (item && typeof item === "object" ? buildHistoryChange(item) : null))
+        .filter((c): c is TicketHistoryChange => c !== null);
+      if (changes.length === 0) return;
+      entries.push({
+        id: typeof e.id === "string" ? e.id : String(i),
+        author: typeof e.author?.displayName === "string" ? e.author.displayName : "Unknown",
+        createdAt: typeof e.created === "string" ? e.created : "",
+        changes,
+      });
+    });
+    return entries.reverse();
+  }
+
+  // The changelog endpoint is oldest first and has no sort option, so the newest
+  // MAX_HISTORY_ENTRIES are reached by reading `total` from the first page and paging from
+  // total - MAX_HISTORY_ENTRIES. Like comments, any failure (including a later page) degrades to
+  // an empty history instead of failing the ticket load, because a half-read list would silently
+  // skip changes. Only counts and the failure reason are logged.
+  async function fetchHistory(
+    key: string,
+  ): Promise<{ history: TicketHistoryEntry[]; truncated: boolean }> {
+    const empty = { history: [], truncated: false };
+    const path = `/rest/api/3/issue/${encodeURIComponent(key)}/changelog`;
+
+    let startAt = 0;
+    let wanted = MAX_HISTORY_ENTRIES;
+    let start = 0;
+    const raw: RawHistoryEntry[] = [];
+    let requests = 0;
+
+    while (requests < MAX_HISTORY_REQUESTS) {
+      requests += 1;
+      const res = await request(
+        "GET",
+        `${path}?startAt=${startAt}&maxResults=${MAX_HISTORY_ENTRIES}`,
+      );
+      if (!res.ok) {
+        opts.logger?.debug({ key, reason: res.reason }, "jira changelog fetch failed");
+        return empty;
+      }
+      const page = parseJson(res.text) as
+        | { total?: unknown; values?: unknown; isLast?: unknown }
+        | undefined;
+      if (!page || !Array.isArray(page.values) || typeof page.total !== "number") {
+        opts.logger?.debug({ key }, "jira changelog unreadable");
+        return empty;
+      }
+
+      if (requests === 1) {
+        // First page tells us the size. When older entries must be skipped and this page
+        // started before the window, discard it and restart at the window's first entry.
+        start = Math.max(0, page.total - MAX_HISTORY_ENTRIES);
+        wanted = page.total - start;
+        if (start > 0) {
+          startAt = start;
+          continue;
+        }
+      }
+
+      raw.push(...(page.values as RawHistoryEntry[]));
+      if (raw.length >= wanted || page.isLast === true || page.values.length === 0) break;
+      startAt += page.values.length;
+    }
+
+    const history = buildHistory(raw.slice(-MAX_HISTORY_ENTRIES));
+    opts.logger?.debug(
+      { key, total: raw.length, kept: history.length, truncated: start > 0 },
+      "jira changelog read",
+    );
+    return { history, truncated: start > 0 };
+  }
+
   async function getIssue(key: string): Promise<Result<Ticket>> {
     // Discovery failure must not block reads: players can still vote on a ticket whose
     // current points we cannot show. Only saving hard-requires the field id.
@@ -319,12 +433,14 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       // If renderedFields is missing, degrade to no description rather than failing the whole
       // load: players can still vote on the summary alone.
       const descriptionHtml = renderDescription(data.renderedFields?.description);
-      const comments = await fetchComments(key);
+      const [comments, changelog] = await Promise.all([fetchComments(key), fetchHistory(key)]);
       opts.logger?.debug(
         {
           key: data.key,
           descriptionChars: descriptionHtml?.length ?? 0,
           commentCount: comments.length,
+          historyCount: changelog.history.length,
+          historyTruncated: changelog.truncated,
         },
         "jira issue rendered",
       );
@@ -348,9 +464,8 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
           labels: Array.isArray(data.fields.labels)
             ? data.fields.labels.filter((l): l is string => typeof l === "string")
             : [],
-          // Task 3 fills these from the changelog endpoint.
-          history: [],
-          historyTruncated: false,
+          history: changelog.history,
+          historyTruncated: changelog.truncated,
         },
       };
     } catch {
