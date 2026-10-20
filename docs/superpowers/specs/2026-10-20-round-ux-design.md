@@ -1,4 +1,4 @@
-# Round UX: epics, auto-reveal, changing a vote after reveal, a 0.5 card
+# Round UX: epics, auto-reveal, vote changes after reveal, a 0.5 card, pausing players, auto-next
 
 Date: 10/20/2026. Status: designed in chat (epic placement picked from a mockup), spec awaiting review.
 Builds after the history branch (`feat/history`, PR #3) merges, because both touch `game.ts`,
@@ -28,7 +28,8 @@ Builds after the history branch (`feat/history`, PR #3) merges, because both tou
 - Server owns the timer (one per room). It is cancelled when: anyone changes or clears their
   card, a player joins or reconnects without a vote, a reset or new ticket starts, or someone
   presses Reveal manually. When the condition becomes true again, it restarts from 3.
-- A player who disconnects stops counting toward "every connected player".
+- A player who disconnects, or is paused (section 5), stops counting toward "every connected
+  player".
 - Snapshot gains `autoRevealAt: string | null` (ISO deadline). The client shows "Revealing in
   3…2…1" in the bottom bar from that deadline (clamped at 0), next to the Reveal button, which
   still works. No client command added.
@@ -55,6 +56,37 @@ Builds after the history branch (`feat/history`, PR #3) merges, because both tou
 - Check every place that assumes whole numbers: points select, save validation in `ws.ts`
   (zod schema), stats formatting (average already has one decimal), card width.
 
+## 5. Pausing a player
+
+- Anyone can click any player's avatar (including their own) to **pause** them, for someone who
+  stepped away. Paused players do not count toward auto-reveal's "everyone has voted" and are not
+  waited on.
+- Unpause: anyone clicks the avatar again, **or** the paused player picks a card (auto-unpause).
+  A pause lasts across rounds and tickets until then. Disconnecting does not clear it.
+- New client command `{ type: "setPaused"; userId: number; paused: boolean }`. This names a
+  **target** player, not the sender. The sender's identity still comes only from the proxy
+  headers. The server ignores unknown user ids and logs `{ by, target, paused }` at info.
+- **Repo rule change (user-approved 10/20/2026):** CLAUDE.md's "No message body carries a user
+  identifier" becomes "No message body carries the acting user's identity; a command may name a
+  target player, which the server checks against the room." Update CLAUDE.md and the decision
+  log in the same change.
+- `PlayerView` gains `paused: boolean`. UI: the avatar is a button (tooltip "Pause" / "Unpause",
+  `aria-pressed`); a paused player renders greyed with a ⏸ badge and no card; "X of Y voted"
+  counts only connected, unpaused players.
+
+## 6. Auto-load the next ticket after a save
+
+- When Save to Jira succeeds, the server starts a **3-second countdown**
+  (`autoNextAt: string | null` in the snapshot), then loads the next ticket and starts voting.
+- "Next" = the first queue item, in display order (sprints, then backlog), whose key is not the
+  ticket just saved. It is chosen when the countdown ends, from the queue as refreshed after the
+  save. Empty queue → no advance; the bar says "Queue is empty".
+- The bar shows "Next ticket in 3…2…1" with a **Stay** button. Stay sends a new command
+  `{ type: "cancelAutoNext" }` and the room stays on the saved ticket.
+- Also cancelled by: a manual load, reset or Next ticket, a new save attempt, or a vote change.
+- The same server-side timer pattern as auto-reveal (one per room, cancelled on the events
+  above); both deadlines are plain ISO times so every client shows the same countdown.
+
 ## Edge cases
 
 - Auto-reveal with one player: they vote, countdown, reveal. Fine for a solo check.
@@ -69,7 +101,10 @@ No test suite by design. Gate: `npm run format && npm run lint && npm run tsc:ch
 Browser check with two to three `?devUser=` tabs (never click Save to Jira in dev): epic chips in
 queue, search and ticket; countdown appears when the last player votes, resets when a card
 changes, reveals at zero; post-reveal change shows "was X" and updates stats and the history row;
-0.5 is selectable, counts in the average, and appears in the points select.
+0.5 is selectable, counts in the average, and appears in the points select; pausing a player who
+hasn't voted lets the countdown start, and their own vote unpauses them. Auto-next after a save
+cannot be exercised in dev without writing to Jira: verify its timer and next-ticket choice by
+reading the code, plus a server-side unit run in a scratch script with a fake Jira client.
 
 ## Docs
 
