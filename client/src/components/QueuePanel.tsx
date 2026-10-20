@@ -8,24 +8,14 @@ import InputAdornment from "@mui/material/InputAdornment";
 import LinearProgress from "@mui/material/LinearProgress";
 import Link from "@mui/material/Link";
 import List from "@mui/material/List";
-import ListItemButton from "@mui/material/ListItemButton";
-import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import {
-  type ChangeEvent,
-  type MouseEvent,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useId,
-  useState,
-} from "react";
+import { type ChangeEvent, type ReactNode, useCallback, useEffect, useId, useState } from "react";
 import type { QueueItem, QueueSection, QueueState } from "../../../shared/protocol.ts";
 import { readJson, removeItem, writeJson } from "../storage.ts";
 import type { SearchResults } from "../useGameSocket.ts";
-import { IssueTypeIcon } from "./IssueTypeIcon.tsx";
+import { TicketRowFrame } from "./TicketRowFrame.tsx";
 
 // localStorage, so collapse state follows the viewer across tabs and visits.
 const COLLAPSED_KEY = "pp.queue.collapsed";
@@ -116,62 +106,60 @@ export function QueuePanel({
   }
 
   return (
-    <Paper sx={{ p: 2 }}>
-      <Stack spacing={2}>
-        <Stack spacing={1}>
-          <TextField
-            label="Search tickets (key or text)"
-            size="small"
-            value={query}
-            disabled={disabled}
-            onChange={onQueryChange}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-          {searchResults?.pending ? <LinearProgress aria-label="Searching" /> : null}
-          {searchBody}
-        </Stack>
-
-        {queue.loading ? (
-          <LinearProgress aria-label="Loading queue" />
-        ) : queue.error ? (
-          <Alert severity="warning">{queue.error}</Alert>
-        ) : (
-          <Typography variant="caption" color="text.secondary">
-            {totalTickets} tickets
-            {queue.fetchedAt ? ` · updated ${new Date(queue.fetchedAt).toLocaleTimeString()}` : ""}
-          </Typography>
-        )}
-
-        {!queue.loading && !queue.error && totalTickets === 0 ? (
-          <Typography color="text.secondary">
-            No unpointed tickets. Change the project or board, or refresh.
-          </Typography>
-        ) : (
-          <Stack spacing={1}>
-            {queue.sections.map((section) => (
-              <QueueSectionBlock
-                boardUrl={boardUrl}
-                key={section.id}
-                section={section}
-                isCollapsed={collapsed.includes(section.id)}
-                currentKey={currentKey}
-                disabled={disabled}
-                onToggle={onToggleSection}
-                onPick={onPick}
-              />
-            ))}
-          </Stack>
-        )}
+    <Stack spacing={2}>
+      <Stack spacing={1}>
+        <TextField
+          label="Search tickets (key or text)"
+          size="small"
+          value={query}
+          disabled={disabled}
+          onChange={onQueryChange}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            },
+          }}
+        />
+        {searchResults?.pending ? <LinearProgress aria-label="Searching" /> : null}
+        {searchBody}
       </Stack>
-    </Paper>
+
+      {queue.loading ? (
+        <LinearProgress aria-label="Loading queue" />
+      ) : queue.error ? (
+        <Alert severity="warning">{queue.error}</Alert>
+      ) : (
+        <Typography variant="caption" color="text.secondary">
+          {totalTickets} tickets
+          {queue.fetchedAt ? ` · updated ${new Date(queue.fetchedAt).toLocaleTimeString()}` : ""}
+        </Typography>
+      )}
+
+      {!queue.loading && !queue.error && totalTickets === 0 ? (
+        <Typography color="text.secondary">
+          No unpointed tickets. Change the project or board, or refresh.
+        </Typography>
+      ) : (
+        <Stack spacing={1}>
+          {queue.sections.map((section) => (
+            <QueueSectionBlock
+              boardUrl={boardUrl}
+              key={section.id}
+              section={section}
+              isCollapsed={collapsed.includes(section.id)}
+              currentKey={currentKey}
+              disabled={disabled}
+              onToggle={onToggleSection}
+              onPick={onPick}
+            />
+          ))}
+        </Stack>
+      )}
+    </Stack>
   );
 }
 
@@ -281,60 +269,16 @@ interface RowProps {
 }
 
 function TicketRow({ item, isCurrent, disabled, onPick }: RowProps) {
-  const onClick = useCallback(() => onPick(item.key), [onPick, item.key]);
   return (
-    <ListItemButton
-      divider
-      selected={isCurrent}
-      // The current ticket is already loaded, so its row is not an action.
-      disabled={disabled && !isCurrent}
-      onClick={isCurrent ? undefined : onClick}
-      aria-current={isCurrent ? "true" : undefined}
-      sx={{
-        display: "block",
-        py: 0.75,
-        borderLeft: 3,
-        borderLeftColor: isCurrent ? "primary.main" : "transparent",
-        cursor: isCurrent ? "default" : undefined,
-      }}
-    >
-      <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-        <Typography component="span" color="text.secondary" sx={{ display: "flex", fontSize: 18 }}>
-          <IssueTypeIcon type={item.issueType} />
-        </Typography>
-        {/* Stop propagation so opening Jira does not also point the ticket. */}
-        <Link
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={stopPropagation}
-          variant="body2"
-          sx={{ fontWeight: 600 }}
-        >
-          {item.key}
-        </Link>
-        <Typography
-          component="span"
-          variant="caption"
-          sx={{
-            ml: "auto !important",
-            px: 0.75,
-            borderRadius: 1,
-            bgcolor: "action.hover",
-            color: "text.secondary",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {item.status}
-        </Typography>
-      </Stack>
-      <Typography variant="body2" noWrap title={item.summary} sx={{ mt: 0.25 }}>
-        {item.summary}
-      </Typography>
-    </ListItemButton>
+    <TicketRowFrame
+      issueType={item.issueType}
+      ticketKey={item.key}
+      url={item.url}
+      isCurrent={isCurrent}
+      disabled={disabled}
+      onPick={onPick}
+      badge={item.status}
+      secondLine={<span title={item.summary}>{item.summary}</span>}
+    />
   );
-}
-
-function stopPropagation(e: MouseEvent<HTMLElement>): void {
-  e.stopPropagation();
 }
