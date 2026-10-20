@@ -9,6 +9,7 @@ import type {
   QueueSection,
   QueueSettings,
   QueueState,
+  SessionHistoryEntry,
   Snapshot,
   Ticket,
 } from "../shared/protocol.ts";
@@ -30,6 +31,8 @@ export interface GameState {
   queue: QueueState;
   projects: JiraProject[];
   boards: JiraBoard[];
+  // Newest first. Lives in memory only, so a restart clears it.
+  history: SessionHistoryEntry[];
 }
 
 export type Result = { ok: true; state: GameState } | { ok: false; reason: string };
@@ -49,6 +52,7 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     queue: { sections: [], loading: false, error: null, fetchedAt: null },
     projects: [],
     boards: [],
+    history: [],
   };
 }
 
@@ -267,5 +271,6 @@ export function viewFor(state: GameState, viewerId: number): Snapshot {
     queue: state.queue,
     projects: state.projects,
     boards: state.boards,
+    history: state.history,
   };
 }

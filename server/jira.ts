@@ -348,6 +348,9 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
           labels: Array.isArray(data.fields.labels)
             ? data.fields.labels.filter((l): l is string => typeof l === "string")
             : [],
+          // Task 3 fills these from the changelog endpoint.
+          history: [],
+          historyTruncated: false,
         },
       };
     } catch {

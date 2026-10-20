@@ -6,30 +6,8 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import type { TicketComment } from "../../../shared/protocol.ts";
 import { initials } from "../lib/initials.ts";
+import { relativeTime } from "../lib/relativeTime.ts";
 import { HtmlBody } from "./HtmlBody.tsx";
-
-const relative = new Intl.RelativeTimeFormat("en", { style: "narrow" });
-
-const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ["month", 30 * 86400],
-  ["week", 7 * 86400],
-  ["day", 86400],
-  ["hour", 3600],
-  ["minute", 60],
-];
-
-// Narrow style renders "2d ago"; the "ago" is dropped so the label stays short beside the author.
-// Anything under a minute, or dated in the future by clock skew, reads "just now".
-function relativeTime(iso: string): string {
-  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (!Number.isFinite(seconds)) return "";
-  for (const [unit, size] of UNITS) {
-    if (seconds >= size) {
-      return relative.format(-Math.floor(seconds / size), unit).replace(/\s*ago$/, "");
-    }
-  }
-  return "just now";
-}
 
 // List only. TicketView owns the surrounding Paper and the tab heading.
 export function TicketComments({ comments }: { comments: TicketComment[] }) {
