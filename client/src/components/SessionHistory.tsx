@@ -27,7 +27,7 @@ export function SessionHistory({ history, currentKey, disabled, onPick }: Props)
           disabled={disabled}
           onPick={onPick}
           badge={entry.savedPoints ?? "–"}
-          secondLine={detailLine(entry)}
+          secondLine={<span title={detailLine(entry)}>{detailLine(entry)}</span>}
         />
       ))}
     </List>

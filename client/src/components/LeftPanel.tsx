@@ -31,7 +31,19 @@ export function LeftPanel({ history, ...queueProps }: Props) {
 
   return (
     <Paper>
-      <Tabs value={tab} onChange={onTabChange} sx={{ borderBottom: 1, borderColor: "divider" }}>
+      <Tabs
+        value={tab}
+        onChange={onTabChange}
+        sx={{
+          borderBottom: 1,
+          borderColor: "divider",
+          // Layout's pane scrolls, so the tabs stay put above a long list.
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+          bgcolor: "background.paper",
+        }}
+      >
         <Tab value="queue" label="Queue" />
         <Tab
           value="history"
@@ -48,17 +60,17 @@ export function LeftPanel({ history, ...queueProps }: Props) {
           sx={{ pr: 4 }}
         />
       </Tabs>
-      <Box sx={{ p: 2 }}>
-        {tab === "queue" ? (
-          <QueuePanel {...queueProps} />
-        ) : (
-          <SessionHistory
-            history={history}
-            currentKey={queueProps.currentKey}
-            disabled={queueProps.disabled}
-            onPick={queueProps.onPick}
-          />
-        )}
+      {/* Both stay mounted: remounting QueuePanel would re-send its restored search query. */}
+      <Box sx={{ p: 2 }} hidden={tab !== "queue"}>
+        <QueuePanel {...queueProps} />
+      </Box>
+      <Box sx={{ p: 2 }} hidden={tab !== "history"}>
+        <SessionHistory
+          history={history}
+          currentKey={queueProps.currentKey}
+          disabled={queueProps.disabled}
+          onPick={queueProps.onPick}
+        />
       </Box>
     </Paper>
   );

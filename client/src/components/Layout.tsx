@@ -140,7 +140,7 @@ export function Layout({ left, main, bottom }: Props) {
             minWidth: 0,
           }}
         >
-          <Pane label="Ticket queue">{left}</Pane>
+          <Pane label="Tickets">{left}</Pane>
         </Box>
         <Box sx={{ display: { xs: "none", lg: "flex" }, alignSelf: "stretch" }}>
           <ResizeHandle
