@@ -83,8 +83,9 @@ values.
    value passes through when it is in `EpicColor`. Otherwise map the legacy "Epic Color"
    value `ghx-label-1` .. `ghx-label-14` to the nearest `EpicColor` (table in code, labeled
    approximate). Anything else is null.
-6. **Never fail the queue for colors.** If field discovery or the color request fails, log a
-   warning (counts only, no ticket content) and return the items with `color: null`. The queue
+6. **Never fail the queue for colors.** If field discovery or the color request fails, log it
+   through `opts.logger?.debug` like the other non-fatal Jira fallbacks (reason and counts only,
+   no ticket content) and return the items with `color: null`. The queue
    and search results still load.
 
 ### Client
@@ -108,7 +109,7 @@ values.
 | Ticket has no parent | No chip |
 | Parent is a story (sub-task) | No chip |
 | Epic has no color in either field | Gray chip |
-| Color lookup or field discovery fails | Gray chips, queue loads, warning logged |
+| Color lookup or field discovery fails | Gray chips, queue loads, debug log |
 | Same epic on many rows | One lookup per distinct key |
 | Very long epic name | Truncated with ellipsis, full name on hover |
 | Unknown issue type | Gray icon, as today |
