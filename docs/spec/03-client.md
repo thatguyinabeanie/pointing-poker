@@ -30,7 +30,7 @@ client/src/components/SessionHistory.tsx     this room's revealed tickets, newes
 client/src/components/TicketRowFrame.tsx     the two-line clickable row shared by the queue and session history
 client/src/components/Layout.tsx             three slots (left, main, bottom), the tickets pane width and the bottom bar height
 client/src/components/ResizeHandle.tsx       draggable, keyboard-operable separator between the panes
-client/src/components/IssueTypeIcon.tsx      Jira issue type to icon, with a default
+client/src/components/IssueTypeIcon.tsx      Jira issue type to icon shape and color, gray default
 client/src/components/TicketView.tsx         empty-state guide, or ticket header plus Description and Comments tabs
 client/src/components/TicketComments.tsx     comments list, rendered inside TicketView
 client/src/components/TicketHistory.tsx      Jira changelog list, rendered inside TicketView
