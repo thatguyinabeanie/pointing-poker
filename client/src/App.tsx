@@ -2,6 +2,8 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Container from "@mui/material/Container";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Switch from "@mui/material/Switch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DECK } from "../../shared/deck.ts";
 import type { Card, ClientCommand, QueueSettings } from "../../shared/protocol.ts";
@@ -90,6 +92,10 @@ export function App() {
   const onAutoRevealChange = useCallback(
     (enabled: boolean) => dispatch({ type: "setAutoReveal", enabled }),
     [dispatch],
+  );
+  const onAutoRevealToggle = useCallback(
+    (e: { target: { checked: boolean } }) => onAutoRevealChange(e.target.checked),
+    [onAutoRevealChange],
   );
   const onReset = useCallback(
     ({ clearTicket }: { clearTicket: boolean }) =>
@@ -187,8 +193,6 @@ export function App() {
                 deck={DECK}
                 disabled={disabled}
                 jiraSave={snapshot.jiraSave}
-                autoReveal={snapshot.autoReveal}
-                onAutoRevealChange={onAutoRevealChange}
                 onReveal={onReveal}
                 onReset={onReset}
                 onSave={onSave}
@@ -207,15 +211,32 @@ export function App() {
         meName={me?.username}
         controls={
           snapshot ? (
-            <QueueControls
-              settings={snapshot.queueSettings}
-              projects={snapshot.projects}
-              boards={snapshot.boards}
-              disabled={disabled}
-              refreshing={snapshot.queue.loading}
-              onChangeSettings={onChangeSettings}
-              onRefresh={onRefresh}
-            />
+            <>
+              <QueueControls
+                settings={snapshot.queueSettings}
+                projects={snapshot.projects}
+                boards={snapshot.boards}
+                disabled={disabled}
+                refreshing={snapshot.queue.loading}
+                onChangeSettings={onChangeSettings}
+                onRefresh={onRefresh}
+              />
+              {/* A room setting like Project and Board. In the action bar it wrapped "Next ticket"
+                  onto a second row after reveal. The ml replaces the label's default -11px
+                  margin so it sits one gap after the refresh button. */}
+              <FormControlLabel
+                label="Auto-reveal"
+                disabled={disabled}
+                sx={{ ml: 1, mr: 0, flexShrink: 0, whiteSpace: "nowrap" }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={snapshot.autoReveal}
+                    onChange={onAutoRevealToggle}
+                  />
+                }
+              />
+            </>
           ) : undefined
         }
       />

@@ -21,7 +21,7 @@ client/src/useGameSocket.ts       WebSocket client hook (section 3)
 client/src/lib/estimate.ts        suggestPoints (reference, copy as is)
 client/src/lib/initials.ts        initials(name) for avatars (Players, EntryRow)
 client/src/lib/relativeTime.ts    relativeTime(iso): short "2d" labels (EntryRow, SessionHistory)
-client/src/components/Header.tsx             slim light header: queue controls, title, status dot and username
+client/src/components/Header.tsx             slim light header: queue controls and Auto-reveal switch, title, status dot and username
 client/src/components/layoutConstants.ts     HEADER_HEIGHT (48), shared by Header and Layout
 client/src/components/QueueControls.tsx      Project and Board selects and Refresh (moved out of QueuePanel)
 client/src/components/LeftPanel.tsx          the left pane's card: Queue and History tabs
@@ -54,7 +54,7 @@ Props: `{ connected: boolean; meName?: string; controls?: ReactNode }`. A `Box c
 
 ### components/QueueControls.tsx
 
-Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header gives it the full width below `sm`, see Header). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads.
+Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header gives it the full width below `sm`, see Header). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads. The Auto-reveal switch is not part of this component, which stays about the queue. App renders it as a sibling right after `QueueControls` inside the `controls` fragment, in the header's left group: a `FormControlLabel` labeled "Auto-reveal" (`sx` `ml: 1`, `mr: 0`, `flexShrink: 0`, `whiteSpace: "nowrap"`) around a `Switch size="small"`, vertically centered with the selects by the header slot's flex `alignItems: "center"`. `checked` is `snapshot.autoReveal`, `disabled` follows `disabled`, and a change calls `onAutoRevealChange(e.target.checked)`, which sends `{ type: "setAutoReveal", enabled }`. It is shared room state, on by default (decision 41), so every viewer sees the same value.
 
 ### components/LeftPanel.tsx
 
@@ -141,7 +141,7 @@ Props: `{ deck: readonly string[]; selected: string | null; disabled: boolean; o
 
 ### components/ActionBar.tsx
 
-Props: `{ phase: Phase; round: number; stats: Snapshot["stats"]; ticket: Ticket | null; deck: readonly string[]; disabled: boolean; jiraSave: JiraSave; autoReveal: boolean; onAutoRevealChange: (enabled: boolean) => void; onReveal: () => void; onReset: (opts: { clearTicket: boolean }) => void; onSave: (points: number) => void }`. It is the right section of the bottom bar. It shows no stats (those are in `Players`); `stats` is kept only to preset the select.
+Props: `{ phase: Phase; round: number; stats: Snapshot["stats"]; ticket: Ticket | null; deck: readonly string[]; disabled: boolean; jiraSave: JiraSave; onReveal: () => void; onReset: (opts: { clearTicket: boolean }) => void; onSave: (points: number) => void }`. It is the right section of the bottom bar. It shows no stats (those are in `Players`); `stats` is kept only to preset the select.
 
 MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}`, one row that wraps when the controls do not fit (below `lg`), holding the controls for the current phase in this order:
 
@@ -149,7 +149,7 @@ MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignIt
 - `phase === "revealed"`: a `FormControl size="small" sx={{ minWidth: 140 }}` with `InputLabel` (id from `useId`) and `Select` labeled "Story points" whose `MenuItem`s are `deck.filter(isNumericCard)`; then Save (`Button variant="contained"`, "Save to Jira", with a 16px `CircularProgress` as `startIcon` while saving); then the reset button.
 - `phase === "idle"`: the reset button only.
 - The reset button is `Button variant="outlined"` whose label is a lookup by phase (below).
-- In every phase, after the reset button: the auto-reveal switch, a `FormControlLabel` labeled "Auto-reveal" around a `Switch size="small"`. `checked` is `autoReveal` from the snapshot, `disabled` follows `disabled`, and a change calls `onAutoRevealChange(e.target.checked)`, which App sends as `{ type: "setAutoReveal", enabled }`. It is shared room state, on by default (decision 41), so every viewer sees the same value. The Reveal button stays for partial reveals.
+- The Auto-reveal switch is not in this bar. It lives in the header next to the Project and Board controls (see `QueueControls`), because in the bar it wrapped "Next ticket" onto a second row after reveal (decision 41). The Reveal button stays for partial reveals.
 - The save result is not shown in the bar. It appears as a top-center toast from App (decision 43), so the bar never changes height. `jiraSave` is still a prop because `status === "saving"` drives the Save button spinner.
 
 Behaviors to preserve:
@@ -250,7 +250,7 @@ Props per component:
 
 | Component | Props |
 |---|---|
-| Header | `connected`, `meName={me?.username}`, `controls` (QueueControls once a snapshot exists) |
+| Header | `connected`, `meName={me?.username}`, `controls` (a fragment with QueueControls and the Auto-reveal switch once a snapshot exists) |
 | QueueControls | `settings={snapshot.queueSettings}`, `projects`, `boards`, `disabled`, `refreshing={snapshot.queue.loading}`, `onChangeSettings`, `onRefresh` |
 | LeftPanel | `history={snapshot.history}`, plus the `QueuePanel` props below |
 | QueuePanel | `queue={snapshot.queue}`, `searchResults` (from the hook), `currentKey={snapshot.ticket?.key ?? null}`, `disabled`, `onPick`, `onSearch={search}`, `boardUrl` |
@@ -258,7 +258,7 @@ Props per component:
 | Players | `players={snapshot.players}`, `phase={snapshot.phase}`, `meId={me?.userId ?? null}`, `stats={snapshot.stats}` |
 | Layout | `left`, `main`, `bottom` as in the slot table above |
 | Deck | `deck={DECK}`, `selected`, `disabled`, `onSelect`, `onClear` |
-| ActionBar | `phase`, `round`, `stats`, `ticket` from snapshot, `deck={DECK}`, `disabled`, `jiraSave={snapshot.jiraSave}`, `autoReveal={snapshot.autoReveal}`, `onAutoRevealChange`, `onReveal`, `onReset`, `onSave` |
+| ActionBar | `phase`, `round`, `stats`, `ticket` from snapshot, `deck={DECK}`, `disabled`, `jiraSave={snapshot.jiraSave}`, `onReveal`, `onReset`, `onSave` |
 
 Deck should be disabled in `idle` (no round to vote in) in addition to `!connected`: pass `disabled={disabled || snapshot.phase !== "voting"}`. This is the one place App adds a phase rule; the server would reject the vote anyway, but the buttons should not invite it.
 
@@ -269,7 +269,7 @@ Command mapping, all through one helper `dispatch(cmd: ClientCommand)`:
 | Click an unselected card | `{ type: "vote", card: card as Card }` (Deck's `onSelect` gives `string`; cast to `Card`, which is imported as a type from shared/protocol.ts) |
 | Click the selected card (clear) | `{ type: "vote", card: selected }` because the server toggles; `selected` is non-null whenever `onClear` can fire, but guard with `if (selected)` |
 | Reveal | `{ type: "reveal" }` |
-| Toggle the Auto-reveal switch | `{ type: "setAutoReveal", enabled }` (the switch shows `snapshot.autoReveal`, so it follows the room, not local state) |
+| Toggle the Auto-reveal switch (header) | `{ type: "setAutoReveal", enabled }` (the switch shows `snapshot.autoReveal`, so it follows the room, not local state) |
 | Next ticket (phase `revealed`) | `{ type: "reset", clearTicket: true }`; returns to `idle` so the team picks the next ticket from the queue |
 | Reset (phase `voting`) / Start round (phase `idle`) | `{ type: "reset" }` |
 | Queue row or search result click | `{ type: "loadTicket", key }` (the key comes from a server-provided item, so no trimming or case change is needed) |
@@ -303,10 +303,10 @@ In every state where a ticket is loaded, TicketView shows an icon link to Jira b
 | State | Header status | QueuePanel (left), TicketView (right) | Players (bottom bar, left) | Deck (bottom bar, middle) | ActionBar (bottom bar, right) |
 |---|---|---|---|---|---|
 | Loading (no snapshot yet) | Reconnecting… | not shown, spinner instead | not shown | not shown | not shown |
-| Idle (no round) | Connected | Queue enabled, TicketView shows the "Pick a ticket to start" guide | Players, dashed empty cards | Disabled | "Auto-reveal" switch (first), then "Start round" |
-| Voting, empty | Connected | Queue, description and comments filled if a ticket is loaded | All dashed empty cards | Enabled, nothing pressed | "Auto-reveal" switch (first), Reveal and "Reset" |
-| Voting, partial | Connected | same | Voted players hold a face-down card, others a dashed empty card; "X of Y voted"; no values shown | Own card pressed (contained, lifted) | "Auto-reveal" switch (first), Reveal and "Reset" (partial reveal is allowed) |
-| Revealed | Connected | same | Each player's card is face-up with the vote ("–" for none), outliers in amber; stats beside the players: average, range, Consensus or No consensus | Disabled, own card still pressed | Story points select preset to suggestion, Save to Jira (enabled if ticket and points), "Next ticket"; no Reveal; the "Auto-reveal" switch stays first |
+| Idle (no round) | Connected | Queue enabled, TicketView shows the "Pick a ticket to start" guide | Players, dashed empty cards | Disabled | "Start round" |
+| Voting, empty | Connected | Queue, description and comments filled if a ticket is loaded | All dashed empty cards | Enabled, nothing pressed | Reveal and "Reset" |
+| Voting, partial | Connected | same | Voted players hold a face-down card, others a dashed empty card; "X of Y voted"; no values shown | Own card pressed (contained, lifted) | Reveal and "Reset" (partial reveal is allowed) |
+| Revealed | Connected | same | Each player's card is face-up with the vote ("–" for none), outliers in amber; stats beside the players: average, range, Consensus or No consensus | Disabled, own card still pressed | Story points select preset to suggestion, Save to Jira (enabled if ticket and points), "Next ticket"; no Reveal |
 | Saving | Connected | same | same | same | Save disabled with spinner; select still shown |
 | Saved | Connected | Current points will update once the server refreshes the ticket | same | same | Green top-center toast "Saved N pts by name" for 6 seconds, shown to everyone in the room that saw the save finish |
 | Error (server rejected a command) | Connected | same | same | same | Red top-center toast for 6 seconds with "message (reason)"; a failed Jira save shows the same red toast with Jira's message |
@@ -363,8 +363,8 @@ Run `npm run lint`, `npm run tsc:check` and `npm run build`; all must pass with 
 9. Resize to 1000px wide (below the `lg` breakpoint): no horizontal scroll, sections stack, controls are usable. Tab through the page with the keyboard and confirm every control is reachable and the pressed card state is announced.
 10. React StrictMode is on in dev: confirm in the server log that each page opens one lasting connection, not a growing number of them, and that edits to a component hot-update without a full reload.
 11. Layout at 1440px wide: two columns visible side by side (queue left, ticket view right) and the one-row bottom bar always visible at the bottom edge: players left, Deck centered, actions right. Load a ticket with a long description and many comments: the ticket pane scrolls independently, and the tickets pane and bottom bar do not move. The page itself has no vertical scrollbar.
-12. Bottom bar by phase: in `voting` the right section shows the Auto-reveal switch (always first), Reveal and Reset only; in `revealed` it shows the Story points select, Save to Jira and Next ticket, and the left section shows each player's card face-up plus "Avg", range and "Consensus" or "No consensus"; unselected cards are dimmed and the selected card stays filled. Shrink the window so the bar is crowded: the players wrap inside the left cell and the Deck stays centered. Save results show as a top-center toast, so the bar keeps its height.
+12. Bottom bar by phase: in `voting` the right section shows Reveal and Reset only; in `revealed` it shows the Story points select, Save to Jira and Next ticket, and the left section shows each player's card face-up plus "Avg", range and "Consensus" or "No consensus"; unselected cards are dimmed and the selected card stays filled. Shrink the window so the bar is crowded: the players wrap inside the left cell and the Deck stays centered. Save results show as a top-center toast, so the bar keeps its height.
 13. Below 1200px wide (for example 1000px): everything stacks full width in the order Queue, ticket view, bottom bar; the bar is not sticky; nothing is clipped and there is no horizontal scroll, including with a wide code block or table in the description.
-14. Auto-reveal: with the switch on, open two tabs as different users and have both vote; the cards flip without anyone pressing Reveal. Turn the switch off, start a new round and vote in both tabs; nothing flips and Reveal still works. Toggle the switch in one tab and confirm it changes in the other. After a reveal, an offline player who voted still shows a faded face-up card.
+14. Auto-reveal: with the header switch on, open two tabs as different users and have both vote; the cards flip without anyone pressing Reveal. Turn the switch off, start a new round and vote in both tabs; nothing flips and Reveal still works. Toggle the header switch in one tab and confirm it changes in the other. After a reveal, an offline player who voted still shows a faded face-up card.
 15. Save toast: the Jira save result appears at the top center and the bottom bar keeps its height.
 16. Ticket rendering: a description with a bulleted list, a link, a code block and a table renders with bullets, a clickable link (opens in a new tab), monospace code and a horizontally scrollable `pre`. An image in a description or comment appears as a link, not an `img`. Comments appear oldest first with author and a local date. A ticket with no description shows "No description"; one with no comments shows "Comments (0)" and "No comments". With no ticket loaded the main area shows the "Pick a ticket to start" guide. Tab reaches every control in the bottom bar. Click the Jira icon link in the ticket header: the ticket opens in a new tab and the app page keeps its state.

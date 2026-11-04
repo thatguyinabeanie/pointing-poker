@@ -1,12 +1,10 @@
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import FormControl from "@mui/material/FormControl";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import Switch from "@mui/material/Switch";
 import { useCallback, useEffect, useId, useState } from "react";
 import { isNumericCard } from "../../../shared/deck.ts";
 import type { JiraSave, Phase, Snapshot, Ticket } from "../../../shared/protocol.ts";
@@ -36,8 +34,6 @@ interface Props {
   deck: readonly string[];
   disabled: boolean;
   jiraSave: JiraSave;
-  autoReveal: boolean;
-  onAutoRevealChange: (enabled: boolean) => void;
   onReveal: () => void;
   onReset: (opts: { clearTicket: boolean }) => void;
   onSave: (points: number) => void;
@@ -57,8 +53,6 @@ export function ActionBar({
   deck,
   disabled,
   jiraSave,
-  autoReveal,
-  onAutoRevealChange,
   onReveal,
   onReset,
   onSave,
@@ -106,10 +100,6 @@ export function ActionBar({
     },
     [ticketKey, round],
   );
-  const onAutoRevealToggle = useCallback(
-    (e: { target: { checked: boolean } }) => onAutoRevealChange(e.target.checked),
-    [onAutoRevealChange],
-  );
   const onSaveClick = useCallback(() => onSave(Number(points)), [onSave, points]);
 
   const resetButton = (
@@ -124,12 +114,6 @@ export function ActionBar({
   // not a wide grid cell.
   return (
     <Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
-      {/* First in every phase, so the switch keeps its slot while the buttons change. */}
-      <FormControlLabel
-        label="Auto-reveal"
-        disabled={disabled}
-        control={<Switch size="small" checked={autoReveal} onChange={onAutoRevealToggle} />}
-      />
       {phase === "voting" && (
         <Button variant="contained" disabled={disabled} onClick={onReveal}>
           Reveal
