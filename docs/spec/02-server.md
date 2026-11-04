@@ -65,11 +65,11 @@ All mutators return new state objects; never mutate a state in place. The comple
 `shared/deck.ts`:
 
 ```ts
-export const DECK = ['0', '1', '2', '3', '5', '8', '13', '21', '?', '☕'] as const;
+export const DECK = ['0', '0.5', '1', '2', '3', '5', '8', '13', '21', '?', '☕'] as const;
 
 // Only these cards count toward average/min/max and can be saved to Jira.
 export function isNumericCard(card: string): boolean {
-  return (DECK as readonly string[]).includes(card) && /^\d+$/.test(card);
+  return (DECK as readonly string[]).includes(card) && /^\d+(\.\d+)?$/.test(card);
 }
 ```
 
@@ -280,7 +280,7 @@ const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('setAutoReveal'), enabled: z.boolean() }),
   z.object({ type: z.literal('reset'), clearTicket: z.boolean().optional() }),
   z.object({ type: z.literal('loadTicket'), key: z.string().trim().min(1).max(64) }),
-  z.object({ type: z.literal('saveEstimate'), points: z.number().int().nonnegative() }),
+  z.object({ type: z.literal('saveEstimate'), points: z.number().nonnegative() }),
   z.object({
     type: z.literal('setQueueSettings'),
     settings: z.object({

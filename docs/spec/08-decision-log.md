@@ -67,6 +67,8 @@ Numbers are stable references; new decisions are appended, never renumbered.
 
 41. **Cards auto-reveal once every connected player has voted (11/04/2026).** This is the user's decision. Waiting for someone to press Reveal after the last vote added a step to every round. A shared "Auto-reveal" switch in the ActionBar, on by default, now flips the cards the moment every connected player holds a card. Only connected players count, so a closed tab never stalls the room, and their votes still show on reveal. The flip is instant, with no countdown or timer. It triggers on a vote, on the last non-voter disconnecting, and on turning the switch on when everyone connected has already voted. It records session history like a manual reveal. The Reveal button stays for partial reveals. The switch is room state (`GameState.autoReveal`, `Snapshot.autoReveal`, command `setAutoReveal`) and survives new rounds; only a server restart resets it to on. Described in `02-server.md` and `03-client.md`.
 
+42. **A 0.5 card in the deck (11/04/2026).** This is the user's decision. Small tickets had no value between 0 and 1, so the room rounded them up or down. The deck now has a `0.5` card between `0` and `1`. It is a numeric card: it counts toward average, min, max and consensus, and it can be saved to Jira as Story Points 0.5. `isNumericCard` accepts one decimal part, and the `saveEstimate` schema no longer requires an integer; `canSave` still allows only numeric deck values. Described in `01-overview.md` and `02-server.md`.
+
 ## Where each decision is specified
 
 - Architecture, stack and repo layout: `01-overview.md`.

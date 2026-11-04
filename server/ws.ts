@@ -19,7 +19,8 @@ const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("setAutoReveal"), enabled: z.boolean() }),
   z.object({ type: z.literal("reset"), clearTicket: z.boolean().optional() }),
   z.object({ type: z.literal("loadTicket"), key: z.string().trim().min(1).max(64) }),
-  z.object({ type: z.literal("saveEstimate"), points: z.number().int().nonnegative() }),
+  // No .int(): 0.5 is a card. game.canSave still rejects anything that is not a numeric deck value.
+  z.object({ type: z.literal("saveEstimate"), points: z.number().nonnegative() }),
   z.object({
     type: z.literal("setQueueSettings"),
     settings: z.object({
