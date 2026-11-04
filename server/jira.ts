@@ -1,7 +1,9 @@
 import { expandBareIssueNumber, ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
 import type {
+  EpicColor,
   JiraBoard,
   JiraProject,
+  QueueEpic,
   QueueItem,
   QueueSection,
   QueueSettings,
@@ -67,6 +69,53 @@ const MAX_BOARDS = 500;
 const QUEUE_PAGE_SIZE = 50;
 const MAX_SPRINTS = 50;
 const SEARCH_PAGE_SIZE = 10;
+// Jira's JQL length and result limits are generous at 100 keys, and a queue holds far fewer.
+const EPIC_COLOR_CHUNK = 100;
+const EPIC_COLORS: ReadonlySet<string> = new Set<EpicColor>([
+  "purple",
+  "blue",
+  "green",
+  "teal",
+  "yellow",
+  "orange",
+  "grey",
+  "dark_purple",
+  "dark_blue",
+  "dark_green",
+  "dark_teal",
+  "dark_yellow",
+  "dark_orange",
+  "dark_grey",
+]);
+// The legacy "Epic Color" field holds ghx-label-N. Jira does not document the palette, so this
+// table is approximate: it was matched by eye to the board's epic labels.
+const GHX_EPIC_COLORS: Readonly<Record<string, EpicColor>> = {
+  "ghx-label-1": "dark_orange",
+  "ghx-label-2": "orange",
+  "ghx-label-3": "yellow",
+  "ghx-label-4": "blue",
+  "ghx-label-5": "dark_grey",
+  "ghx-label-6": "green",
+  "ghx-label-7": "purple",
+  "ghx-label-8": "dark_purple",
+  "ghx-label-9": "orange",
+  "ghx-label-10": "blue",
+  "ghx-label-11": "teal",
+  "ghx-label-12": "grey",
+  "ghx-label-13": "dark_green",
+  "ghx-label-14": "dark_yellow",
+};
+
+interface FieldInfo {
+  id: string;
+  name: string;
+  custom: boolean;
+}
+
+/** Exact-name lookup among custom fields. */
+function customFieldId(fields: FieldInfo[], name: string): string | null {
+  return fields.find((f) => f.custom && f.name === name)?.id ?? null;
+}
 
 function fail(reason: JiraErrorReason, message: string): JiraFailure {
   return { ok: false, reason, message };
@@ -217,23 +266,55 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     }
   }
 
-  async function discoverFieldId(): Promise<Result<string>> {
+  async function readFields(): Promise<Result<FieldInfo[]>> {
     const res = await request("GET", "/rest/api/3/field");
     if (!res.ok) return res;
+    let raw: unknown;
     try {
-      const fields: unknown = JSON.parse(res.text);
-      if (Array.isArray(fields)) {
-        const customNamed = (name: string) =>
-          fields.find(
-            (f: { custom?: unknown; name?: unknown; id?: unknown }) =>
-              f?.custom === true && f.name === name && typeof f.id === "string",
-          );
-        const found = customNamed("Story Points") ?? customNamed("Story point estimate");
-        if (found) return { ok: true, value: found.id as string };
-      }
+      raw = JSON.parse(res.text);
     } catch {
       return fail("jira_error", "Jira returned an unreadable field list.");
     }
+    const fields: FieldInfo[] = [];
+    // A non-array body yields an empty list, so callers report "field not found" as before.
+    if (Array.isArray(raw)) {
+      for (const f of raw as { custom?: unknown; name?: unknown; id?: unknown }[]) {
+        if (typeof f?.id === "string" && typeof f.name === "string") {
+          fields.push({ id: f.id, name: f.name, custom: f.custom === true });
+        }
+      }
+    }
+    return { ok: true, value: fields };
+  }
+
+  let cachedFields: Promise<Result<FieldInfo[]>> | null = null;
+
+  // Story Points discovery and the epic color fields share one /field request. Concurrent
+  // callers share it, and failures are evicted so a transient error does not stick.
+  function listFields(): Promise<Result<FieldInfo[]>> {
+    if (!cachedFields) {
+      const p: Promise<Result<FieldInfo[]>> = readFields().then(
+        (r) => {
+          if (!r.ok && cachedFields === p) cachedFields = null;
+          return r;
+        },
+        (err: unknown) => {
+          if (cachedFields === p) cachedFields = null;
+          throw err;
+        },
+      );
+      cachedFields = p;
+    }
+    return cachedFields;
+  }
+
+  async function discoverFieldId(): Promise<Result<string>> {
+    const fields = await listFields();
+    if (!fields.ok) return fields;
+    const id =
+      customFieldId(fields.value, "Story Points") ??
+      customFieldId(fields.value, "Story point estimate");
+    if (id) return { ok: true, value: id };
     return fail(
       "no_points_field",
       'No custom field named "Story Points" or "Story point estimate".',
@@ -655,7 +736,10 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         if (counted.ok) total = Math.max(counted.value, items.length);
       }
       const all: QueueSection = { id: "all", name: "Tickets", kind: "all", total, items };
-      return { ok: true, value: total === 0 ? [] : [all] };
+      return {
+        ok: true,
+        value: total === 0 ? [] : await withEpicColors([all]),
+      };
     }
 
     // With a board, the Agile API mirrors the board's backlog page: it applies the board's own
@@ -669,7 +753,10 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       ? scrumSections(boardId, clause)
       : otherSections(boardId, clause));
     if (!sections.ok) return sections;
-    return { ok: true, value: sections.value.filter((section) => section.total > 0) };
+    return {
+      ok: true,
+      value: await withEpicColors(sections.value.filter((section) => section.total > 0)),
+    };
   }
 
   async function scrumSections(boardId: number, clause: string): Promise<Result<QueueSection[]>> {
@@ -763,7 +850,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
   ): Promise<Result<QueueSection>> {
     const res = await request(
       "GET",
-      `/rest/agile/1.0/board/${boardId}/${endpoint}?jql=${encodeURIComponent(clause)}&maxResults=${QUEUE_PAGE_SIZE}&fields=summary,issuetype,status`,
+      `/rest/agile/1.0/board/${boardId}/${endpoint}?jql=${encodeURIComponent(clause)}&maxResults=${QUEUE_PAGE_SIZE}&fields=summary,issuetype,status,parent`,
       undefined,
       { notFoundMessage: boardNotFound(boardId) },
     );
@@ -778,6 +865,29 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return { ok: true, value: { id, name, kind, total, items } };
   }
 
+  // Only an epic-level parent counts: a sub-task's parent is a story, not an epic.
+  // hierarchyLevel 1 is Jira's epic level; the type name is the fallback when it is missing.
+  function parseEpic(
+    parent:
+      | {
+          key?: unknown;
+          fields?: { summary?: unknown; issuetype?: { name?: unknown; hierarchyLevel?: unknown } };
+        }
+      | null
+      | undefined,
+  ): QueueEpic | null {
+    if (typeof parent?.key !== "string") return null;
+    const type = parent.fields?.issuetype;
+    const level = type?.hierarchyLevel;
+    const isEpic =
+      typeof level === "number"
+        ? level === 1
+        : typeof type?.name === "string" && type.name.toLowerCase() === "epic";
+    if (!isEpic) return null;
+    const name = parent.fields?.summary;
+    return { key: parent.key, name: typeof name === "string" ? name : "", color: null };
+  }
+
   function parseIssues(issues: unknown): QueueItem[] | undefined {
     if (!Array.isArray(issues)) return undefined;
     const items: QueueItem[] = [];
@@ -787,6 +897,13 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         summary?: unknown;
         issuetype?: { name?: unknown };
         status?: { name?: unknown };
+        parent?: {
+          key?: unknown;
+          fields?: {
+            summary?: unknown;
+            issuetype?: { name?: unknown; hierarchyLevel?: unknown };
+          };
+        };
       };
     }[]) {
       if (typeof issue.key !== "string") continue;
@@ -797,10 +914,103 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
           typeof issue.fields?.issuetype?.name === "string" ? issue.fields.issuetype.name : "",
         status: typeof issue.fields?.status?.name === "string" ? issue.fields.status.name : "",
         url: `${baseUrl}/browse/${issue.key}`,
-        epic: null,
+        epic: parseEpic(issue.fields?.parent),
       });
     }
     return items;
+  }
+
+  // Epic colors are cosmetic, so this never rejects: whatever Jira would not give is left out
+  // and the chip falls back to the neutral color. Only counts and reasons are logged.
+  async function epicColors(keys: string[]): Promise<Map<string, EpicColor>> {
+    const colors = new Map<string, EpicColor>();
+    if (keys.length === 0) return colors;
+    try {
+      const fields = await listFields();
+      if (!fields.ok) {
+        opts.logger?.debug(
+          { reason: fields.reason, keys: keys.length },
+          "jira epic colors unavailable",
+        );
+        return colors;
+      }
+      const issueColorId = customFieldId(fields.value, "Issue color");
+      const epicColorId = customFieldId(fields.value, "Epic Color");
+      const wanted = [issueColorId, epicColorId].filter((id): id is string => id !== null);
+      if (wanted.length === 0) return colors;
+
+      for (let i = 0; i < keys.length; i += EPIC_COLOR_CHUNK) {
+        const chunk = keys.slice(i, i + EPIC_COLOR_CHUNK);
+        const res = await request("POST", "/rest/api/3/search/jql", {
+          jql: `key in (${chunk.map(jqlQuote).join(", ")})`,
+          fields: wanted,
+          maxResults: chunk.length,
+        });
+        if (!res.ok) {
+          opts.logger?.debug(
+            { reason: res.reason, keys: chunk.length },
+            "jira epic colors unavailable",
+          );
+          continue;
+        }
+        const data = parseJson(res.text) as
+          | { issues?: { key?: unknown; fields?: Record<string, unknown> }[] }
+          | undefined;
+        if (!Array.isArray(data?.issues)) continue;
+        for (const issue of data.issues) {
+          if (typeof issue?.key !== "string") continue;
+          const color = pickEpicColor(issue.fields, issueColorId, epicColorId);
+          if (color) colors.set(issue.key, color);
+        }
+      }
+    } catch (err) {
+      // Only the error name, as in request(): messages can embed request details.
+      opts.logger?.debug(
+        { reason: err instanceof Error ? err.name : "Error", keys: keys.length },
+        "jira epic colors unavailable",
+      );
+    }
+    return colors;
+  }
+
+  // "Issue color" (team-managed) holds a name like "dark_yellow"; the legacy "Epic Color"
+  // (company-managed) holds ghx-label-N. The newer field wins when both are set.
+  function pickEpicColor(
+    fields: Record<string, unknown> | undefined,
+    issueColorId: string | null,
+    epicColorId: string | null,
+  ): EpicColor | null {
+    const issueColor = issueColorId ? fields?.[issueColorId] : undefined;
+    if (typeof issueColor === "string" && EPIC_COLORS.has(issueColor)) {
+      return issueColor as EpicColor;
+    }
+    const legacy = epicColorId ? fields?.[epicColorId] : undefined;
+    // Object.hasOwn keeps a value like "constructor" from reading Object.prototype.
+    if (typeof legacy === "string" && Object.hasOwn(GHX_EPIC_COLORS, legacy)) {
+      return GHX_EPIC_COLORS[legacy] ?? null;
+    }
+    return null;
+  }
+
+  // Returns copies with epic colors filled in; the inputs are not mutated.
+  async function colorItems(items: QueueItem[]): Promise<QueueItem[]> {
+    return (await withEpicColors([{ items }]))[0]?.items ?? items;
+  }
+
+  async function withEpicColors<T extends { items: QueueItem[] }>(sections: T[]): Promise<T[]> {
+    const keys = new Set<string>();
+    for (const section of sections) {
+      for (const item of section.items) if (item.epic) keys.add(item.epic.key);
+    }
+    const colors = await epicColors([...keys]);
+    if (colors.size === 0) return sections;
+    return sections.map((section) => ({
+      ...section,
+      items: section.items.map((item) => {
+        const color = item.epic ? colors.get(item.epic.key) : undefined;
+        return item.epic && color ? { ...item, epic: { ...item.epic, color } } : item;
+      }),
+    }));
   }
 
   async function approximateCount(jql: string): Promise<Result<number>> {
@@ -821,7 +1031,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
   ): Promise<Result<{ items: QueueItem[]; more: boolean }>> {
     const res = await request("POST", "/rest/api/3/search/jql", {
       jql,
-      fields: ["summary", "issuetype", "status"],
+      fields: ["summary", "issuetype", "status", "parent"],
       maxResults,
     });
     if (!res.ok) return res;
@@ -836,7 +1046,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
 
   async function runSearch(jql: string, maxResults: number): Promise<Result<QueueItem[]>> {
     const found = await searchIssues(jql, maxResults);
-    return found.ok ? { ok: true, value: found.value.items } : found;
+    return found.ok ? { ok: true, value: await colorItems(found.value.items) } : found;
   }
 
   async function searchTickets(
