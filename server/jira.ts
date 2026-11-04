@@ -797,6 +797,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
           typeof issue.fields?.issuetype?.name === "string" ? issue.fields.issuetype.name : "",
         status: typeof issue.fields?.status?.name === "string" ? issue.fields.status.name : "",
         url: `${baseUrl}/browse/${issue.key}`,
+        epic: null,
       });
     }
     return items;
