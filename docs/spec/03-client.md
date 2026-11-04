@@ -18,6 +18,7 @@ client/src/main.tsx               createRoot, StrictMode, ThemeProvider, CssBase
 client/src/theme.ts               createTheme with Lato typography (already exists in the scaffold; keep)
 client/src/App.tsx                owns useGameSocket, fills the Layout slots, maps UI actions to commands
 client/src/useGameSocket.ts       WebSocket client hook (section 3)
+client/src/lib/epicColors.ts      epicHex(color): Jira epic color name to hex, gray when null
 client/src/lib/estimate.ts        suggestPoints (reference, copy as is)
 client/src/lib/initials.ts        initials(name) for avatars (Players, EntryRow)
 client/src/lib/relativeTime.ts    relativeTime(iso): short "2d" labels (EntryRow, SessionHistory)
@@ -66,7 +67,7 @@ Props: `{ history: SessionHistoryEntry[]; currentKey: string | null; disabled: b
 
 ### components/TicketRowFrame.tsx
 
-Props: `{ issueType; ticketKey; url; isCurrent; disabled; onPick; badge: ReactNode; secondLine: ReactNode }`. The row layout that used to live inside `QueuePanel`'s `TicketRows`, extracted so the queue, the search results and `SessionHistory` look and behave the same: type icon, key as a `Link` to `url` (new tab, `rel="noopener noreferrer"`, its click does not pick the ticket), a badge on the right, then the second line on one line with ellipsis. The root is a `ListItem` (`li`, `disablePadding`) holding the `ListItemButton`, so rows are list items of the `List` that both callers render them in (assistive technology announces them with their position). The whole row is the `ListItemButton`; the current row is highlighted with a left accent border, has `aria-current`, and ignores clicks. Other rows are disabled while `disabled` is true. `QueuePanel` passes the status as the badge and the summary as the second line.
+Props: `{ issueType; ticketKey; url; isCurrent; disabled; onPick; badge: ReactNode; epic?: QueueEpic | null; secondLine: ReactNode }`. The row layout that used to live inside `QueuePanel`'s `TicketRows`, extracted so the queue, the search results and `SessionHistory` look and behave the same: type icon, key as a `Link` to `url` (new tab, `rel="noopener noreferrer"`, its click does not pick the ticket), an epic chip when `epic` is set (an outlined rounded element with an 8px dot in `epicHex(epic.color)` and the epic name in caption text; the name truncates with an ellipsis and has the full name as its `title`, so the key and the badge always stay visible; no click handler of its own), a badge on the right, then the second line on one line with ellipsis. The root is a `ListItem` (`li`, `disablePadding`) holding the `ListItemButton`, so rows are list items of the `List` that both callers render them in (assistive technology announces them with their position). The whole row is the `ListItemButton`; the current row is highlighted with a left accent border, has `aria-current`, and ignores clicks. Other rows are disabled while `disabled` is true. `QueuePanel` passes the status as the badge, `item.epic` as the epic and the summary as the second line. `SessionHistory` passes no epic.
 
 ### components/QueuePanel.tsx
 

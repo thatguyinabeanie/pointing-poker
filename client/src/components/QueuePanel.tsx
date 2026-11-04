@@ -278,6 +278,7 @@ function TicketRow({ item, isCurrent, disabled, onPick }: RowProps) {
       disabled={disabled}
       onPick={onPick}
       badge={item.status}
+      epic={item.epic}
       secondLine={<span title={item.summary}>{item.summary}</span>}
     />
   );
