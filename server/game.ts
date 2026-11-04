@@ -9,6 +9,7 @@ import type {
   QueueSection,
   QueueSettings,
   QueueState,
+  SessionHistoryEntry,
   Snapshot,
   Ticket,
 } from "../shared/protocol.ts";
@@ -30,6 +31,11 @@ export interface GameState {
   queue: QueueState;
   projects: JiraProject[];
   boards: JiraBoard[];
+  // Newest first. Lives in memory only, so a restart clears it.
+  history: SessionHistoryEntry[];
+  // Room-wide switch, kept across rounds and tickets (newRound spreads state). Only a server
+  // restart puts it back to on.
+  autoReveal: boolean;
 }
 
 export type Result = { ok: true; state: GameState } | { ok: false; reason: string };
@@ -49,6 +55,8 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     queue: { sections: [], loading: false, error: null, fetchedAt: null },
     projects: [],
     boards: [],
+    history: [],
+    autoReveal: true,
   };
 }
 
@@ -84,13 +92,21 @@ export function join(state: GameState, identity: { userId: number; username: str
 
 // The vote is kept on disconnect: flaky wifi or a reload must not erase a player's card
 // mid-round. Zero-connection players are only dropped when the next round starts.
-export function leave(state: GameState, userId: number): Result {
+// Leaving can also reveal: the last player who had not voted may be the one who disconnected.
+export function leave(
+  state: GameState,
+  userId: number,
+  now: string = new Date().toISOString(),
+): Result {
   const player = state.players.get(userId);
   if (!player) return ok(state);
   return ok(
-    withPlayers(state, (players) => {
-      players.set(userId, { ...player, connections: Math.max(0, player.connections - 1) });
-    }),
+    autoRevealIfReady(
+      withPlayers(state, (players) => {
+        players.set(userId, { ...player, connections: Math.max(0, player.connections - 1) });
+      }),
+      now,
+    ),
   );
 }
 
@@ -117,23 +133,95 @@ function newRound(state: GameState, ticket: Ticket | null, phase: Phase): GameSt
   };
 }
 
-export function vote(state: GameState, userId: number, card: string): Result {
+export function vote(
+  state: GameState,
+  userId: number,
+  card: string,
+  now: string = new Date().toISOString(),
+): Result {
   if (state.phase !== "voting") return fail("not_voting");
   if (!isCard(card)) return fail("invalid_card");
   const player = state.players.get(userId);
   if (!player) return fail("unknown_player");
   return ok(
-    withPlayers(state, (players) => {
-      // Clicking the selected card again withdraws it, so there is no separate "clear" command.
-      players.set(userId, { ...player, vote: player.vote === card ? null : card });
-    }),
+    autoRevealIfReady(
+      withPlayers(state, (players) => {
+        // Clicking the selected card again withdraws it, so there is no separate "clear" command.
+        players.set(userId, { ...player, vote: player.vote === card ? null : card });
+      }),
+      now,
+    ),
   );
 }
 
+// Flips the cards once every connected player holds a vote. Disconnected players are left out
+// of the check on purpose: they keep their vote (and it shows on reveal), but a closed tab must
+// not stall the room. A withdrawn card leaves a null vote, so it never reveals.
+function autoRevealIfReady(state: GameState, now: string): GameState {
+  if (!state.autoReveal || state.phase !== "voting") return state;
+  const connected = [...state.players.values()].filter((p) => p.connections > 0);
+  if (connected.length === 0 || connected.some((p) => p.vote === null)) return state;
+  return revealState(state, now);
+}
+
+// Shared by the manual and the automatic reveal so both write session history the same way.
+function revealState(state: GameState, now: string): GameState {
+  return recordReveal({ ...state, phase: "revealed" }, now);
+}
+
+export function setAutoReveal(
+  state: GameState,
+  enabled: boolean,
+  now: string = new Date().toISOString(),
+): Result {
+  // Turning it on can reveal at once if everyone connected had already voted.
+  return ok(autoRevealIfReady({ ...state, autoReveal: enabled }, now));
+}
+
 // Partial votes are allowed: a stuck teammate should not block the room.
-export function reveal(state: GameState): Result {
+export function reveal(state: GameState, now: string = new Date().toISOString()): Result {
   if (state.phase !== "voting") return fail("not_voting");
-  return ok({ ...state, phase: "revealed" });
+  return ok(revealState(state, now));
+}
+
+const MAX_HISTORY = 50;
+
+// One row per ticket key: a re-reveal replaces the row, keeps its saved points and moves it to
+// the top. The array is replaced, never mutated, because viewFor hands it out by reference.
+// A reveal with zero votes records nothing: an empty reveal (for example right after reloading a
+// ticket from History) would otherwise wipe the row's stats and mark it re-voted.
+export function recordReveal(state: GameState, now: string): GameState {
+  const { ticket } = state;
+  const voters = [...state.players.values()].filter((p) => p.vote !== null).length;
+  if (ticket === null || voters === 0) return state;
+  const stats = summarize(state.players.values());
+  const previous = state.history.find((row) => row.key === ticket.key);
+  const row: SessionHistoryEntry = {
+    key: ticket.key,
+    summary: ticket.summary,
+    issueType: ticket.issueType,
+    url: ticket.url,
+    average: stats.average,
+    min: stats.min,
+    max: stats.max,
+    consensus: stats.consensus,
+    voters,
+    revoted: previous !== undefined,
+    savedPoints: previous?.savedPoints ?? null,
+    revealedAt: now,
+  };
+  const rest = state.history.filter((r) => r.key !== ticket.key);
+  return { ...state, history: [row, ...rest].slice(0, MAX_HISTORY) };
+}
+
+// Keyed by ticket, not by round, so a save that finishes after the room moved on still lands.
+// Returns the same state object when no row matches so callers can skip a broadcast.
+export function markHistorySaved(state: GameState, key: string, points: number): Result {
+  if (!state.history.some((row) => row.key === key)) return ok(state);
+  return ok({
+    ...state,
+    history: state.history.map((row) => (row.key === key ? { ...row, savedPoints: points } : row)),
+  });
 }
 
 export function reset(state: GameState, opts: { clearTicket?: boolean } = {}): Result {
@@ -267,5 +355,7 @@ export function viewFor(state: GameState, viewerId: number): Snapshot {
     queue: state.queue,
     projects: state.projects,
     boards: state.boards,
+    history: state.history,
+    autoReveal: state.autoReveal,
   };
 }

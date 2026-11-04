@@ -16,9 +16,11 @@ import { userLog } from "./log.ts";
 const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("vote"), card: z.string().max(8) }),
   z.object({ type: z.literal("reveal") }),
+  z.object({ type: z.literal("setAutoReveal"), enabled: z.boolean() }),
   z.object({ type: z.literal("reset"), clearTicket: z.boolean().optional() }),
   z.object({ type: z.literal("loadTicket"), key: z.string().trim().min(1).max(64) }),
-  z.object({ type: z.literal("saveEstimate"), points: z.number().int().nonnegative() }),
+  // No .int(): 0.5 is a card. game.canSave still rejects anything that is not a numeric deck value.
+  z.object({ type: z.literal("saveEstimate"), points: z.number().nonnegative() }),
   z.object({
     type: z.literal("setQueueSettings"),
     settings: z.object({
@@ -439,6 +441,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
           broadcast();
           return;
         }
+        case "setAutoReveal":
+          applyState(game.setAutoReveal(state, cmd.enabled));
+          broadcast();
+          return;
         case "reset":
           // Bumped so a loadTicket still waiting on Jira is dropped; otherwise it would start a
           // new round when it resolves and wipe votes cast since this reset.
@@ -542,6 +548,12 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         if (state.round !== round) {
           // A reset or new ticket happened mid-flight: leave the new round's save state alone.
           log.info({ key, points, ok: res.ok }, "save finished for a stale round");
+          // Only the history row: markSave would overwrite the new round's save state.
+          if (res.ok) {
+            const before = state;
+            applyState(game.markHistorySaved(state, key, points));
+            if (state !== before) broadcast();
+          }
         } else {
           log.info({ key, points, ok: res.ok }, "save finished");
           applyState(
@@ -552,6 +564,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
                 : { status: "error", points, message: res.message },
             ),
           );
+          if (res.ok) applyState(game.markHistorySaved(state, key, points));
           broadcast();
         }
         if (!res.ok) return;

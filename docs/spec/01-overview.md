@@ -152,7 +152,7 @@ pointing-poker/
         ParticipantChips.tsx  Chips with vote status (icon before reveal, value after), offline dimmed
         Deck.tsx              row of Buttons, aria-pressed, click selected card = clear vote
         ActionBar.tsx         Reveal | Reset/Next ticket | Story points Select + Save to Jira | stats
-        ErrorSnackbar.tsx     Snackbar+Alert keyed on error.id
+        NoticeSnackbar.tsx    Snackbar+Alert (top center) keyed on the notice object
   server/
     index.ts                  reads env, buildApp(), listen 0.0.0.0:PORT (default 3838), SIGTERM
     app.ts                    buildApp({ jira, heartbeatMs, serveClient = true }): registers plugins + routes, returns the Fastify instance (serveClient: false skips booting Vite)
@@ -169,7 +169,7 @@ pointing-poker/
     lib/proxy-identity.ts         getProxyIdentity / ProxyIdentity: reads the configured identity headers
   shared/
     protocol.ts               Snapshot, PlayerView, Ticket, ClientCommand, ServerMessage, QueueSettings, QueueItem, JiraProject, JiraBoard, QueueState (types only)
-    deck.ts                   DECK = ['0','1','2','3','5','8','13','21','?','☕'], isNumericCard()
+    deck.ts                   DECK = ['0','0.5','1','2','3','5','8','13','21','?','☕'], isNumericCard()
     constants.ts              queue defaults shared by client and server
   vite.config.ts              root: 'client', build.outDir '../dist' (viteFastify appends /client), emptyOutDir, plugins: [react(), viteFastify({ spa: true })]
   biome.json                  formatter space/100/double quotes, linter recommended + domains.react, "!!dist"
@@ -193,7 +193,7 @@ Note: the tree above is the plan's layout. Test files and `vitest.config.ts` are
 | Platform service | A container that the hosting platform runs from a container image. Its settings (port, health path, proxy timeouts, replicas, credentials, env vars) are set on the service. Replicas default to 1 (verified against the platform's source during planning) |
 | Service report | The published page in the hosting platform where people open a service. Identity headers arrive only when a request goes through the platform |
 | Story Points field | The Jira custom field the app writes. Found by name "Story Points" (fallback "Story point estimate"), unless `JIRA_STORY_POINTS_FIELD` is set. The plan confirmed a field named "Story Points" exists in the team's main project |
-| Deck | The fixed card list in `shared/deck.ts`: `0, 1, 2, 3, 5, 8, 13, 21, ?, coffee`. Numeric cards feed the stats and the Save value |
+| Deck | The fixed card list in `shared/deck.ts`: `0, 0.5, 1, 2, 3, 5, 8, 13, 21, ?, coffee`. Numeric cards feed the stats and the Save value |
 | Round | One estimate on one ticket. `loadTicket` starts a new round and bumps the `round` counter. `reset` replays voting on the same ticket |
 | Snapshot | The full state object sent to one viewer in each `state` message. Built per viewer by `viewFor` |
 | Phase | `idle`, `voting`, or `revealed`. Votes are visible only in `revealed` |

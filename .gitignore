@@ -31,3 +31,6 @@ mise.local.toml
 
 # subagent-driven-development scratch space (ledger, briefs, reports)
 /.superpowers
+
+# Nested git worktrees
+/.claude/worktrees

@@ -2,21 +2,21 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Container from "@mui/material/Container";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Switch from "@mui/material/Switch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DECK } from "../../shared/deck.ts";
 import type { Card, ClientCommand, QueueSettings } from "../../shared/protocol.ts";
 import { ActionBar } from "./components/ActionBar.tsx";
 import { Deck } from "./components/Deck.tsx";
-import { ErrorSnackbar } from "./components/ErrorSnackbar.tsx";
 import { Header } from "./components/Header.tsx";
 import { Layout } from "./components/Layout.tsx";
+import { LeftPanel } from "./components/LeftPanel.tsx";
+import { type Notice, NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
-import { QueuePanel } from "./components/QueuePanel.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
-
-type Notice = { id: number; message: string };
 
 export function App() {
   const { snapshot, me, connected, send, error, disconnectedReason, search, searchResults } =
@@ -26,8 +26,29 @@ export function App() {
   const localNoticeId = useRef(-1);
 
   useEffect(() => {
-    if (error) setNotice(error);
+    if (error) setNotice({ ...error, severity: "error" });
   }, [error]);
+
+  // Remember the previous save status so a toast shows only when this client sees a save finish.
+  // Joining, reconnecting or refreshing while jiraSave is already "saved" or "error" must not
+  // replay it. Every snapshot is a new object, so the effect cannot tell a new result from the
+  // same one arriving again without the previous status.
+  const jiraSave = snapshot?.jiraSave;
+  const prevSaveStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevSaveStatus.current;
+    prevSaveStatus.current = jiraSave?.status;
+    if (prev !== "saving" || !jiraSave) return;
+    if (jiraSave.status === "saved") {
+      setNotice({
+        id: localNoticeId.current--,
+        message: `Saved ${jiraSave.points} pts by ${jiraSave.by}`,
+        severity: "success",
+      });
+    } else if (jiraSave.status === "error") {
+      setNotice({ id: localNoticeId.current--, message: jiraSave.message, severity: "error" });
+    }
+  }, [jiraSave]);
 
   const dispatch = useCallback(
     (cmd: ClientCommand) => {
@@ -35,6 +56,7 @@ export function App() {
         setNotice({
           id: localNoticeId.current--,
           message: "Not connected. Your action was not sent.",
+          severity: "error",
         });
       }
     },
@@ -67,6 +89,14 @@ export function App() {
     if (selected) dispatch({ type: "vote", card: selected });
   }, [dispatch, selected]);
   const onReveal = useCallback(() => dispatch({ type: "reveal" }), [dispatch]);
+  const onAutoRevealChange = useCallback(
+    (enabled: boolean) => dispatch({ type: "setAutoReveal", enabled }),
+    [dispatch],
+  );
+  const onAutoRevealToggle = useCallback(
+    (e: { target: { checked: boolean } }) => onAutoRevealChange(e.target.checked),
+    [onAutoRevealChange],
+  );
   const onReset = useCallback(
     ({ clearTicket }: { clearTicket: boolean }) =>
       dispatch(clearTicket ? { type: "reset", clearTicket: true } : { type: "reset" }),
@@ -116,7 +146,8 @@ export function App() {
     content = (
       <Layout
         left={
-          <QueuePanel
+          <LeftPanel
+            history={snapshot.history}
             queue={snapshot.queue}
             searchResults={searchResults}
             currentKey={snapshot.ticket?.key ?? null}
@@ -180,20 +211,37 @@ export function App() {
         meName={me?.username}
         controls={
           snapshot ? (
-            <QueueControls
-              settings={snapshot.queueSettings}
-              projects={snapshot.projects}
-              boards={snapshot.boards}
-              disabled={disabled}
-              refreshing={snapshot.queue.loading}
-              onChangeSettings={onChangeSettings}
-              onRefresh={onRefresh}
-            />
+            <>
+              <QueueControls
+                settings={snapshot.queueSettings}
+                projects={snapshot.projects}
+                boards={snapshot.boards}
+                disabled={disabled}
+                refreshing={snapshot.queue.loading}
+                onChangeSettings={onChangeSettings}
+                onRefresh={onRefresh}
+              />
+              {/* A room setting like Project and Board. In the action bar it wrapped "Next ticket"
+                  onto a second row after reveal. The ml replaces the label's default -11px
+                  margin so it sits one gap after the refresh button. */}
+              <FormControlLabel
+                label="Auto-reveal"
+                disabled={disabled}
+                sx={{ ml: 1, mr: 0, flexShrink: 0, whiteSpace: "nowrap" }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={snapshot.autoReveal}
+                    onChange={onAutoRevealToggle}
+                  />
+                }
+              />
+            </>
           ) : undefined
         }
       />
       {content}
-      <ErrorSnackbar error={notice} />
+      <NoticeSnackbar notice={notice} />
     </>
   );
 }
