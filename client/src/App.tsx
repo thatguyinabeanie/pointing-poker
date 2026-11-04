@@ -7,16 +7,16 @@ import { DECK } from "../../shared/deck.ts";
 import type { Card, ClientCommand, QueueSettings } from "../../shared/protocol.ts";
 import { ActionBar } from "./components/ActionBar.tsx";
 import { Deck } from "./components/Deck.tsx";
-import { ErrorSnackbar } from "./components/ErrorSnackbar.tsx";
 import { Header } from "./components/Header.tsx";
 import { Layout } from "./components/Layout.tsx";
 import { LeftPanel } from "./components/LeftPanel.tsx";
+import { NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
 
-type Notice = { id: number; message: string };
+type Notice = { id: number; message: string; severity: "error" | "success" };
 
 export function App() {
   const { snapshot, me, connected, send, error, disconnectedReason, search, searchResults } =
@@ -26,8 +26,29 @@ export function App() {
   const localNoticeId = useRef(-1);
 
   useEffect(() => {
-    if (error) setNotice(error);
+    if (error) setNotice({ ...error, severity: "error" });
   }, [error]);
+
+  // Remember the previous save status so a toast shows only when this client sees a save finish.
+  // Joining, reconnecting or refreshing while jiraSave is already "saved" or "error" must not
+  // replay it. Every snapshot is a new object, so the effect cannot tell a new result from the
+  // same one arriving again without the previous status.
+  const jiraSave = snapshot?.jiraSave;
+  const prevSaveStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevSaveStatus.current;
+    prevSaveStatus.current = jiraSave?.status;
+    if (prev !== "saving" || !jiraSave) return;
+    if (jiraSave.status === "saved") {
+      setNotice({
+        id: localNoticeId.current--,
+        message: `Saved ${jiraSave.points} pts by ${jiraSave.by}`,
+        severity: "success",
+      });
+    } else if (jiraSave.status === "error") {
+      setNotice({ id: localNoticeId.current--, message: jiraSave.message, severity: "error" });
+    }
+  }, [jiraSave]);
 
   const dispatch = useCallback(
     (cmd: ClientCommand) => {
@@ -35,6 +56,7 @@ export function App() {
         setNotice({
           id: localNoticeId.current--,
           message: "Not connected. Your action was not sent.",
+          severity: "error",
         });
       }
     },
@@ -200,7 +222,7 @@ export function App() {
         }
       />
       {content}
-      <ErrorSnackbar error={notice} />
+      <NoticeSnackbar notice={notice} />
     </>
   );
 }

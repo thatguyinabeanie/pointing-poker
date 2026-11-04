@@ -1,4 +1,3 @@
-import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import FormControl from "@mui/material/FormControl";
@@ -121,7 +120,7 @@ export function ActionBar({
 
   // One row, controls chosen by phase: voting shows Reveal and Reset; revealed shows the
   // points select, Save and Next ticket; idle shows Start round. Stats live in Players.
-  // Wraps so the select, buttons and the save alert stay on screen below lg, where the bar is
+  // Wraps so the select and buttons stay on screen below lg, where the bar is
   // not a wide grid cell.
   return (
     <Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
@@ -158,16 +157,6 @@ export function ActionBar({
         disabled={disabled}
         control={<Switch size="small" checked={autoReveal} onChange={onAutoRevealToggle} />}
       />
-      {jiraSave.status === "saved" && (
-        <Alert severity="success" sx={{ py: 0, maxWidth: 260 }}>
-          Saved {jiraSave.points} pts by {jiraSave.by}
-        </Alert>
-      )}
-      {jiraSave.status === "error" && (
-        <Alert severity="error" sx={{ py: 0, maxWidth: 260 }}>
-          {jiraSave.message}
-        </Alert>
-      )}
     </Stack>
   );
 }

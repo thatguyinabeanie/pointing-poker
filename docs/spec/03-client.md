@@ -39,7 +39,7 @@ client/src/components/HtmlBody.tsx           the only dangerouslySetInnerHTML in
 client/src/components/Players.tsx            avatars holding cards, voted count and stats
 client/src/components/Deck.tsx
 client/src/components/ActionBar.tsx
-client/src/components/ErrorSnackbar.tsx
+client/src/components/NoticeSnackbar.tsx
 ```
 
 `TopBar.tsx`, `TicketDescription.tsx` and `ParticipantChips.tsx` were deleted by the redesign. Files to author from scratch: `App.tsx` and `useGameSocket.ts`. `index.html`, `main.tsx` and `theme.ts` already exist in the scaffold; `main.tsx` needs only the `<App />` swap. The nine components, `HtmlBody.tsx` and `estimate.ts` come from the reference folder. `TicketPanel.tsx` and `ParticipantList.tsx` no longer exist; do not create them. Reading the reference files is the fastest route; the summaries below are the contract each one must keep. Do not rename props.
@@ -143,14 +143,14 @@ Props: `{ deck: readonly string[]; selected: string | null; disabled: boolean; o
 
 Props: `{ phase: Phase; round: number; stats: Snapshot["stats"]; ticket: Ticket | null; deck: readonly string[]; disabled: boolean; jiraSave: JiraSave; autoReveal: boolean; onAutoRevealChange: (enabled: boolean) => void; onReveal: () => void; onReset: (opts: { clearTicket: boolean }) => void; onSave: (points: number) => void }`. It is the right section of the bottom bar. It shows no stats (those are in `Players`); `stats` is kept only to preset the select.
 
-MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}`, one row that wraps when the controls and the save alert do not fit (below `lg`), holding the controls for the current phase in this order:
+MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}`, one row that wraps when the controls do not fit (below `lg`), holding the controls for the current phase in this order:
 
 - `phase === "voting"`: Reveal (`Button variant="contained"`), then the reset button.
 - `phase === "revealed"`: a `FormControl size="small" sx={{ minWidth: 140 }}` with `InputLabel` (id from `useId`) and `Select` labeled "Story points" whose `MenuItem`s are `deck.filter(isNumericCard)`; then Save (`Button variant="contained"`, "Save to Jira", with a 16px `CircularProgress` as `startIcon` while saving); then the reset button.
 - `phase === "idle"`: the reset button only.
 - The reset button is `Button variant="outlined"` whose label is a lookup by phase (below).
 - In every phase, after the reset button: the auto-reveal switch, a `FormControlLabel` labeled "Auto-reveal" around a `Switch size="small"`. `checked` is `autoReveal` from the snapshot, `disabled` follows `disabled`, and a change calls `onAutoRevealChange(e.target.checked)`, which App sends as `{ type: "setAutoReveal", enabled }`. It is shared room state, on by default (decision 41), so every viewer sees the same value. The Reveal button stays for partial reveals.
-- Last in the row, at the far right: when `jiraSave.status === "saved"` an `Alert severity="success" sx={{ py: 0, maxWidth: 260 }}` "Saved {points} pts by {by}"; when `"error"` an `Alert severity="error"` with the same sx showing `jiraSave.message`. Decision: compact inline Alerts, not the snackbar. The snackbar stays reserved for server error messages (section 3), so a failed Jira save still shows both.
+- The save result is not shown in the bar. It appears as a top-center toast from App (decision 43), so the bar never changes height. `jiraSave` is still a prop because `status === "saving"` drives the Save button spinner.
 
 Behaviors to preserve:
 
@@ -161,9 +161,9 @@ Behaviors to preserve:
 - A manual pick sticks. `stats` is a new object on every snapshot, so it is not a dependency of the effect; the select re-suggests only when `phase`, `ticket?.key` or `round` changes.
 - A manual pick survives a refresh. Changing the select writes `{ ticketKey, round, points }` to `sessionStorage` key `pp.points.pick` (per tab). When the effect runs, a stored entry whose ticket key and round match the snapshot, while `phase === "revealed"`, and whose points are a numeric deck card, is used instead of the suggestion. Any other stored entry is stale and is removed, so a new reveal or ticket still never keeps an old pick. The suggestion itself is not stored.
 
-### components/ErrorSnackbar.tsx
+### components/NoticeSnackbar.tsx
 
-Props: `{ error: { id: number; message: string } | null }`. Holds its own `open` state. An effect keyed on the `error` object sets `open` to `error !== null`. Every event is a new object, so the same text arriving twice reopens the snackbar. It is not keyed on `error.id`: the server's counter restarts at 1 after a server restart while the component survives the reconnect, so an id can repeat. MUI: `Snackbar open autoHideDuration={6000}` whose `onClose(_, reason)` ignores `"clickaway"` and otherwise closes, containing `Alert severity="error" variant="filled" onClose={close}` that shows `error?.message`.
+Props: `{ notice: { id: number; message: string; severity: "error" | "success" } | null }`. One shared toast for server errors, the local "Not connected" notice and Jira save results, so two toasts never stack. Holds its own `open` state. An effect keyed on the `notice` object sets `open` to `notice !== null`. Every event is a new object, so the same text arriving twice reopens the snackbar. It is not keyed on `notice.id`: the server's counter restarts at 1 after a server restart while the component survives the reconnect, so an id can repeat. MUI: `Snackbar open autoHideDuration={6000} anchorOrigin={{ vertical: "top", horizontal: "center" }}` whose `onClose(_, reason)` ignores `"clickaway"` and otherwise closes, containing `Alert severity={notice?.severity} variant="filled" onClose={close}` that shows `notice?.message`. Because it reads the prop, the last notice stays rendered during the exit transition and the severity does not flash to a default.
 
 ### MUI 9 note
 
@@ -222,7 +222,7 @@ Search (`search(query)`): `useCallback` with an empty dependency list. It trims 
 <>
   <Header connected={connected} meName={me?.username} controls={snapshot ? <QueueControls ... /> : undefined} />
   ...content...
-  <ErrorSnackbar error={notice} />
+  <NoticeSnackbar notice={notice} />
 </>
 ```
 
@@ -277,7 +277,7 @@ Command mapping, all through one helper `dispatch(cmd: ClientCommand)`:
 | Type in the search box | Not through `dispatch`: App passes the hook's `search` as `onSearch`, which sends `{ type: "searchTickets", query }` after a 400 ms debounce |
 | Save to Jira | `{ type: "saveEstimate", points }` |
 
-Notice handling. `dispatch` calls `send(cmd)`; if it returns false, App shows a local notice "Not connected. Your action was not sent." The snackbar takes one `{ id, message }`, so App keeps `const [notice, setNotice] = useState<{ id: number; message: string } | null>(null)`. Server errors come from the hook's `error`; an effect (`[error]` dependency, with a `biome-ignore lint/correctness/useExhaustiveDependencies` comment if Biome flags it) copies the hook's error into `notice` whenever it changes. Local notices use a counter in a `useRef` that starts at -1 and decrements, so local ids are negative and never collide with the server's positive ids. Pass `notice` to `ErrorSnackbar`. Because controls are disabled when not connected, this notice is a safety net for the short window between a socket dying and the `close` event arriving.
+Notice handling. `dispatch` calls `send(cmd)`; if it returns false, App shows a local notice "Not connected. Your action was not sent." The snackbar takes one `{ id, message, severity }`, so App keeps `const [notice, setNotice] = useState<{ id: number; message: string; severity: "error" | "success" } | null>(null)`. Server errors come from the hook's `error`; an effect (`[error]` dependency, with a `biome-ignore lint/correctness/useExhaustiveDependencies` comment if Biome flags it) copies the hook's error into `notice` (severity `"error"`) whenever it changes. A second effect watches `snapshot?.jiraSave` with a `useRef` holding the previous status; only the transition from `"saving"` to `"saved"` or `"error"` sets a notice (`Saved {points} pts by {by}` with severity `"success"`, or `jiraSave.message` with severity `"error"`). The ref exists so joining, reconnecting or refreshing while `jiraSave` is already `"saved"` or `"error"` shows nothing; every snapshot is a new object, so the object alone cannot tell a new result from a repeat. Both effects share the local id counter below. Local notices use a counter in a `useRef` that starts at -1 and decrements, so local ids are negative and never collide with the server's positive ids. Pass `notice` to `NoticeSnackbar`. Because controls are disabled when not connected, this notice is a safety net for the short window between a socket dying and the `close` event arriving.
 
 `App` is a named export `App` in `App.tsx`; `main.tsx` imports it as `import { App } from "./App.tsx"`. No context providers, no reducers.
 
@@ -307,8 +307,8 @@ In every state where a ticket is loaded, TicketView shows an icon link to Jira b
 | Voting, partial | Connected | same | Voted players hold a face-down card, others a dashed empty card; "X of Y voted"; no values shown | Own card pressed (contained, lifted) | Reveal and "Reset" (partial reveal is allowed) |
 | Revealed | Connected | same | Each player's card is face-up with the vote ("–" for none), outliers in amber; stats beside the players: average, range, Consensus or No consensus | Disabled, own card still pressed | Story points select preset to suggestion, Save to Jira (enabled if ticket and points), "Next ticket"; no Reveal |
 | Saving | Connected | same | same | same | Save disabled with spinner; select still shown |
-| Saved | Connected | Current points will update once the server refreshes the ticket | same | same | Compact green alert "Saved N pts by name" at the far right |
-| Error (server rejected a command) | Connected | same | same | same | Red snackbar for 6 seconds with "message (reason)"; a failed Jira save also shows the compact red alert with Jira's message at the far right of the ActionBar |
+| Saved | Connected | Current points will update once the server refreshes the ticket | same | same | Green top-center toast "Saved N pts by name" for 6 seconds, shown to everyone in the room that saw the save finish |
+| Error (server rejected a command) | Connected | same | same | same | Red top-center toast for 6 seconds with "message (reason)"; a failed Jira save shows the same red toast with Jira's message |
 | Disconnected (retrying) | Reconnecting… (warning) | Last snapshot, all controls disabled | Last snapshot, offline dimming comes from the server's next state | Disabled | All buttons and the select disabled |
 | Unauthenticated (close 4401) | n/a, bar shows only the title and "Reconnecting…" is acceptable | not shown | not shown | not shown | Warning alert "Open this app inside the hosting platform" only |
 | Ticket with a long description | Connected | Ticket pane scrolls on its own at lg and up; code blocks and tables scroll sideways, long words wrap; the other panes and the bottom bar stay put | unchanged | unchanged | unchanged |
@@ -334,14 +334,14 @@ Accessibility checklist (all already satisfied by the reference components; do n
 - Comments, ticket history and session history are real lists (`List` renders `ul` with `li` items), so the count is announced. Each date is a `<time>` element with `dateTime`. History old and new values use `<del>` and `<ins>`, so the change is not conveyed by strike-through alone.
 - Keyboard and the sticky bar: the bar is last in DOM order and every control in it is a native button or select, so Tab reaches it after the panes. Sticky positioning never covers a focused element in a pane, because the pane `maxHeight` stops above the bar, and the browser scrolls a focused element into view inside its pane. Do not add `tabIndex` to the panes. The player avatars are not interactive and are not tab stops; the resize handle between the panes is a tab stop.
 - The page has exactly one `h1` (in Header). Ticket key links (in TicketView, the queue and the search results) are the only external links and use `rel="noopener noreferrer"`.
-- The loading spinner has an accessible label. The snackbar's `Alert` has the implicit `role="alert"` so errors are announced.
+- The loading spinner has an accessible label. The snackbar's `Alert` has the implicit `role="alert"` so errors and save results are announced.
 - Text contrast comes from the stock MUI theme; do not lower opacity on text other than the offline player rows.
 
 Responsive rules:
 
 - Breakpoints: laptop widths are the target. At `lg` (1200px) and up: two columns (queue 4 and main 8 of 12) with independent scrolling and the single-row sticky bottom bar (section 2, Layout.tsx). Below `lg`: everything stacks full width in the order Queue, ticket view, then the bottom bar (players, Deck, ActionBar stacked), the bar is not sticky and the page scrolls. No phone-specific work beyond "nothing breaks": no horizontal page scroll, and the Deck still wraps.
 - Layout width: `Container maxWidth={false}` uses the whole page, with `px: { xs: 2, lg: 3 }` side gutters and no `maxWidth` cap.
-- ActionBar is one row that wraps (`flexWrap: "wrap"` with `useFlexGap`) so the controls and the save alert never overflow below `lg`.
+- ActionBar is one row that wraps (`flexWrap: "wrap"` with `useFlexGap`) so the controls never overflow below `lg`.
 - Deck wraps (`flexWrap`) when its section is narrower than ten cards. Cards stay at least 48px wide and 64px tall; that height sets the 88px minimum of the bottom bar.
 - The header is a fixed 48px single row. The title is hidden below `md`, and the queue selects shrink to `minWidth` 110 at `xs` so the header does not overflow on phones.
 - No horizontal page scroll at 1000px or at 1440px. Verify by resizing the browser.
@@ -349,19 +349,19 @@ Responsive rules:
 
 ## 9. Acceptance checklist for the implementer
 
-Run `npm run lint`, `npm run tsc:check` and `npm run build`; all must pass with no Biome warnings (the three `biome-ignore` comments, two in ActionBar and ErrorSnackbar plus the `noDangerouslySetInnerHtml` one in HtmlBody, are expected and must include their explanation text). Do not write tests. Then verify in a browser with `npm run dev` and `ALLOW_DEV_USER=1` set in the environment (or `.env`; never read or print `.env`):
+Run `npm run lint`, `npm run tsc:check` and `npm run build`; all must pass with no Biome warnings (the three `biome-ignore` comments, two in ActionBar and NoticeSnackbar plus the `noDangerouslySetInnerHtml` one in HtmlBody, are expected and must include their explanation text). Do not write tests. Then verify in a browser with `npm run dev` and `ALLOW_DEV_USER=1` set in the environment (or `.env`; never read or print `.env`):
 
 1. Open `http://localhost:3838/?devUser=alice` in one browser profile and `http://localhost:3838/?devUser=bob` in another (separate profiles or one normal and one private window, so the identity does not collide). Each shows "You are alice" / "You are bob" and both appear in each other's list.
 2. Queue: with the dev server pointed at Jira, the queue shows tickets for the selected project. Change the project and confirm the board select reloads its options and the list changes on both pages. Pick a board and confirm Bob's page shows the same board and sections, and that every listed ticket is not Done and has no Story Points. Alice clicks a row (not its key link); both pages show the same ticket card and that row reads "Current".
 3. Search: type "dashboard" in the search box and confirm matching tickets appear after a short pause with a progress bar while waiting, and only on the page that searched. Type a full key such as `PP-123` and confirm it is found directly. With a project selected, type just the number (`123`) and confirm the same ticket is found (the server expands it to `PP-123`); with no project, a bare number runs a text search instead. A single character does nothing and clears the results. A query with no hits shows "No matches". Clicking a result row loads it for everyone.
 4. Start a round if the phase is idle. Alice picks 5: her card shows pressed, Bob's list shows a face-down card for Alice but no value. Alice clicks 5 again: the card turns dashed again (vote cleared).
 5. Both vote; Bob picks 8 and Alice 5, then Reveal (also try revealing with one vote). Values appear on the players' cards on both pages. The Save select presets to 8 (tie goes higher). Make both vote the same card in another round and confirm that card is preset. Vote `?` only and confirm Save stays disabled until a number is picked.
-6. Save to Jira on a throwaway ticket: Save shows a spinner, then a green "Saved N pts by name" on both pages, and Story Points change in Jira. The ticket also disappears from the queue on both pages once the queue refreshes. Trigger an error (for example save with an invalid or unreachable Jira) and confirm both the snackbar and the red inline alert appear; trigger the same error twice and confirm the snackbar reopens.
+6. Save to Jira on a throwaway ticket: Save shows a spinner, then a green top-center toast "Saved N pts by name" on both pages (a page refreshed afterwards shows no toast), and Story Points change in Jira. The ticket also disappears from the queue on both pages once the queue refreshes. Trigger an error (for example save with an invalid or unreachable Jira) and confirm the red top-center toast appears with Jira's message and the bottom bar does not change height; trigger the same error twice and confirm the toast reopens.
 7. Stop the dev server. Within a few seconds both pages show "Reconnecting…" and all controls become disabled while the last state stays visible. Restart the server; both pages reconnect on their own (backoff never exceeds about 10 seconds), the status dot returns to green, and controls re-enable.
 8. Open the app with `ALLOW_DEV_USER` unset and no identity headers: the page shows "Open this app inside the hosting platform" and the browser network panel shows no reconnect attempts after the 4401 close.
 9. Resize to 1000px wide (below the `lg` breakpoint): no horizontal scroll, sections stack, controls are usable. Tab through the page with the keyboard and confirm every control is reachable and the pressed card state is announced.
 10. React StrictMode is on in dev: confirm in the server log that each page opens one lasting connection, not a growing number of them, and that edits to a component hot-update without a full reload.
 11. Layout at 1440px wide: two columns visible side by side (queue left, ticket view right) and the one-row bottom bar always visible at the bottom edge: players left, Deck centered, actions right. Load a ticket with a long description and many comments: the ticket pane scrolls independently, and the tickets pane and bottom bar do not move. The page itself has no vertical scrollbar.
-12. Bottom bar by phase: in `voting` the right section shows Reveal and Reset only; in `revealed` it shows the Story points select, Save to Jira and Next ticket, and the left section shows each player's card face-up plus "Avg", range and "Consensus" or "No consensus"; unselected cards are dimmed and the selected card stays filled. Shrink the window so the bar is crowded: the players wrap inside the left cell and the Deck stays centered. Saved and error alerts appear compactly at the far right.
+12. Bottom bar by phase: in `voting` the right section shows Reveal and Reset only; in `revealed` it shows the Story points select, Save to Jira and Next ticket, and the left section shows each player's card face-up plus "Avg", range and "Consensus" or "No consensus"; unselected cards are dimmed and the selected card stays filled. Shrink the window so the bar is crowded: the players wrap inside the left cell and the Deck stays centered. Save results show as a top-center toast, so the bar keeps its height.
 13. Below 1200px wide (for example 1000px): everything stacks full width in the order Queue, ticket view, bottom bar; the bar is not sticky; nothing is clipped and there is no horizontal scroll, including with a wide code block or table in the description.
 14. Ticket rendering: a description with a bulleted list, a link, a code block and a table renders with bullets, a clickable link (opens in a new tab), monospace code and a horizontally scrollable `pre`. An image in a description or comment appears as a link, not an `img`. Comments appear oldest first with author and a local date. A ticket with no description shows "No description"; one with no comments shows "Comments (0)" and "No comments". With no ticket loaded the main area shows the "Pick a ticket to start" guide. Tab reaches every control in the bottom bar. Click the Jira icon link in the ticket header: the ticket opens in a new tab and the app page keeps its state.

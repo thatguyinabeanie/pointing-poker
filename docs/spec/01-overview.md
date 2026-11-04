@@ -152,7 +152,7 @@ pointing-poker/
         ParticipantChips.tsx  Chips with vote status (icon before reveal, value after), offline dimmed
         Deck.tsx              row of Buttons, aria-pressed, click selected card = clear vote
         ActionBar.tsx         Reveal | Reset/Next ticket | Story points Select + Save to Jira | stats
-        ErrorSnackbar.tsx     Snackbar+Alert keyed on error.id
+        NoticeSnackbar.tsx    Snackbar+Alert (top center) keyed on the notice object
   server/
     index.ts                  reads env, buildApp(), listen 0.0.0.0:PORT (default 3838), SIGTERM
     app.ts                    buildApp({ jira, heartbeatMs, serveClient = true }): registers plugins + routes, returns the Fastify instance (serveClient: false skips booting Vite)

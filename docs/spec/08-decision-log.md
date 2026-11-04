@@ -69,6 +69,8 @@ Numbers are stable references; new decisions are appended, never renumbered.
 
 42. **A 0.5 card in the deck (11/04/2026).** This is the user's decision. Small tickets had no value between 0 and 1, so the room rounded them up or down. The deck now has a `0.5` card between `0` and `1`. It is a numeric card: it counts toward average, min, max and consensus, and it can be saved to Jira as Story Points 0.5. `isNumericCard` accepts one decimal part, and the `saveEstimate` schema no longer requires an integer; `canSave` still allows only numeric deck values. Described in `01-overview.md` and `02-server.md`.
 
+43. **Save feedback is a top-center toast, shared with errors (11/04/2026).** This is the user's decision. The inline alert after Save to Jira ("Saved 2 pts by name" or Jira's error) made the bottom bar taller, so the whole layout jumped. The result now shows as a toast at the top center, for everyone in the room, and only for a client that sees the save go from `saving` to `saved` or `error`, so joining or refreshing afterwards shows nothing. Errors and save results share one `NoticeSnackbar` (severity error or success, 6 seconds, close button, ignores clickaway), so two toasts never stack, and the existing error toasts moved to top center too. The Save button spinner is unchanged. Client only: no server or protocol change. Described in `03-client.md`.
+
 ## Where each decision is specified
 
 - Architecture, stack and repo layout: `01-overview.md`.
