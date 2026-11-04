@@ -172,7 +172,16 @@ export function TicketView({ ticket }: { ticket: Ticket | null }) {
           ) : null}
         </Stack>
 
-        <Tabs value={tab} onChange={onTabChange} sx={{ borderBottom: 1, borderColor: "divider" }}>
+        {/* Scrollable because three tabs need about 270px, and the pane gets that narrow on small
+            screens and when the resizable queue pane is widened. */}
+        <Tabs
+          value={tab}
+          onChange={onTabChange}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
+          sx={{ borderBottom: 1, borderColor: "divider" }}
+        >
           <Tab value="description" label="Description" />
           <Tab
             value="comments"

@@ -66,7 +66,7 @@ Props: `{ history: SessionHistoryEntry[]; currentKey: string | null; disabled: b
 
 ### components/TicketRowFrame.tsx
 
-Props: `{ issueType; ticketKey; url; isCurrent; disabled; onPick; badge: ReactNode; secondLine: ReactNode }`. The row layout that used to live inside `QueuePanel`'s `TicketRows`, extracted so the queue, the search results and `SessionHistory` look and behave the same: type icon, key as a `Link` to `url` (new tab, `rel="noopener noreferrer"`, its click does not pick the ticket), a badge on the right, then the second line on one line with ellipsis. The whole row is a `ListItemButton`; the current row is highlighted with a left accent border, has `aria-current`, and ignores clicks. Other rows are disabled while `disabled` is true. `QueuePanel` passes the status as the badge and the summary as the second line.
+Props: `{ issueType; ticketKey; url; isCurrent; disabled; onPick; badge: ReactNode; secondLine: ReactNode }`. The row layout that used to live inside `QueuePanel`'s `TicketRows`, extracted so the queue, the search results and `SessionHistory` look and behave the same: type icon, key as a `Link` to `url` (new tab, `rel="noopener noreferrer"`, its click does not pick the ticket), a badge on the right, then the second line on one line with ellipsis. The root is a `ListItem` (`li`, `disablePadding`) holding the `ListItemButton`, so rows are list items of the `List` that both callers render them in (assistive technology announces them with their position). The whole row is the `ListItemButton`; the current row is highlighted with a left accent border, has `aria-current`, and ignores clicks. Other rows are disabled while `disabled` is true. `QueuePanel` passes the status as the badge and the summary as the second line.
 
 ### components/QueuePanel.tsx
 
@@ -111,7 +111,7 @@ Props: `{ ticket: Ticket | null }`. Display only; QueuePanel and SessionHistory 
 
 Header: a small line with the issue-type icon, type name, key as a link and an icon link to Jira (both `target="_blank"`, `rel="noopener noreferrer"`; this replaces the "Open in Jira" button, and it is still the way to edit text in Jira since the app never edits tickets); the summary as the `h2`; a "Current points" box on the right (the value, or "–" when unset); and a labeled row (label above value) for Status, Priority, Assignee ("Unassigned" when null) and Labels (omitted when empty).
 
-Tabs: "Description", "Comments" (with a count badge) and "History". The selected tab resets to Description when a different ticket loads. The description is `HtmlBody`, or a muted "No description". `TicketComments` renders the Comments tab and `TicketHistory` the History tab (below).
+Tabs: "Description", "Comments" (with a count badge) and "History". The `Tabs` are `variant="scrollable"` with `scrollButtons="auto"` and `allowScrollButtonsMobile`, because three tabs need about 270px and the pane can be narrower than that on small screens or when the resizable queue pane is widened; without it History is clipped with no way to reach it. The Comments badge has enough right padding to sit inside the scroller. The selected tab resets to Description when a different ticket loads. The description is `HtmlBody`, or a muted "No description". `TicketComments` renders the Comments tab and `TicketHistory` the History tab (below).
 
 ### components/TicketComments.tsx
 
