@@ -13,8 +13,9 @@ import type { Ticket } from "../../../shared/protocol.ts";
 import { HtmlBody } from "./HtmlBody.tsx";
 import { IssueTypeIcon } from "./IssueTypeIcon.tsx";
 import { TicketComments } from "./TicketComments.tsx";
+import { TicketHistory } from "./TicketHistory.tsx";
 
-type TabId = "description" | "comments";
+type TabId = "description" | "comments" | "history";
 
 const STEPS = [
   "Pick a ticket from the queue",
@@ -171,7 +172,16 @@ export function TicketView({ ticket }: { ticket: Ticket | null }) {
           ) : null}
         </Stack>
 
-        <Tabs value={tab} onChange={onTabChange} sx={{ borderBottom: 1, borderColor: "divider" }}>
+        {/* Scrollable because three tabs need about 270px, and the pane gets that narrow on small
+            screens and when the resizable queue pane is widened. */}
+        <Tabs
+          value={tab}
+          onChange={onTabChange}
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
+          sx={{ borderBottom: 1, borderColor: "divider" }}
+        >
           <Tab value="description" label="Description" />
           <Tab
             value="comments"
@@ -187,6 +197,7 @@ export function TicketView({ ticket }: { ticket: Ticket | null }) {
             }
             sx={{ pr: 4 }}
           />
+          <Tab value="history" label="History" />
         </Tabs>
 
         {tab === "description" ? (
@@ -195,8 +206,10 @@ export function TicketView({ ticket }: { ticket: Ticket | null }) {
           ) : (
             <Typography color="text.secondary">No description</Typography>
           )
-        ) : (
+        ) : tab === "comments" ? (
           <TicketComments comments={ticket.comments} />
+        ) : (
+          <TicketHistory history={ticket.history} truncated={ticket.historyTruncated} />
         )}
       </Stack>
     </Paper>

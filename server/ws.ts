@@ -542,6 +542,12 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         if (state.round !== round) {
           // A reset or new ticket happened mid-flight: leave the new round's save state alone.
           log.info({ key, points, ok: res.ok }, "save finished for a stale round");
+          // Only the history row: markSave would overwrite the new round's save state.
+          if (res.ok) {
+            const before = state;
+            applyState(game.markHistorySaved(state, key, points));
+            if (state !== before) broadcast();
+          }
         } else {
           log.info({ key, points, ok: res.ok }, "save finished");
           applyState(
@@ -552,6 +558,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
                 : { status: "error", points, message: res.message },
             ),
           );
+          if (res.ok) applyState(game.markHistorySaved(state, key, points));
           broadcast();
         }
         if (!res.ok) return;

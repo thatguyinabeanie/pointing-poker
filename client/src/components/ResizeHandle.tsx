@@ -109,7 +109,7 @@ export function ResizeHandle({ width, min, max, rowWidth, onPreview, onCommit, o
     <Box
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize ticket queue"
+      aria-label="Resize tickets pane"
       aria-valuenow={percent(width)}
       aria-valuemin={percent(min)}
       aria-valuemax={percent(max)}
