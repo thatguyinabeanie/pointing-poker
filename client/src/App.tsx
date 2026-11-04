@@ -67,6 +67,10 @@ export function App() {
     if (selected) dispatch({ type: "vote", card: selected });
   }, [dispatch, selected]);
   const onReveal = useCallback(() => dispatch({ type: "reveal" }), [dispatch]);
+  const onAutoRevealChange = useCallback(
+    (enabled: boolean) => dispatch({ type: "setAutoReveal", enabled }),
+    [dispatch],
+  );
   const onReset = useCallback(
     ({ clearTicket }: { clearTicket: boolean }) =>
       dispatch(clearTicket ? { type: "reset", clearTicket: true } : { type: "reset" }),
@@ -163,6 +167,8 @@ export function App() {
                 deck={DECK}
                 disabled={disabled}
                 jiraSave={snapshot.jiraSave}
+                autoReveal={snapshot.autoReveal}
+                onAutoRevealChange={onAutoRevealChange}
                 onReveal={onReveal}
                 onReset={onReset}
                 onSave={onSave}

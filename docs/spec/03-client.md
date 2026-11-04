@@ -141,7 +141,7 @@ Props: `{ deck: readonly string[]; selected: string | null; disabled: boolean; o
 
 ### components/ActionBar.tsx
 
-Props: `{ phase: Phase; round: number; stats: Snapshot["stats"]; ticket: Ticket | null; deck: readonly string[]; disabled: boolean; jiraSave: JiraSave; onReveal: () => void; onReset: (opts: { clearTicket: boolean }) => void; onSave: (points: number) => void }`. It is the right section of the bottom bar. It shows no stats (those are in `Players`); `stats` is kept only to preset the select.
+Props: `{ phase: Phase; round: number; stats: Snapshot["stats"]; ticket: Ticket | null; deck: readonly string[]; disabled: boolean; jiraSave: JiraSave; autoReveal: boolean; onAutoRevealChange: (enabled: boolean) => void; onReveal: () => void; onReset: (opts: { clearTicket: boolean }) => void; onSave: (points: number) => void }`. It is the right section of the bottom bar. It shows no stats (those are in `Players`); `stats` is kept only to preset the select.
 
 MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}`, one row that wraps when the controls and the save alert do not fit (below `lg`), holding the controls for the current phase in this order:
 
@@ -149,6 +149,7 @@ MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignIt
 - `phase === "revealed"`: a `FormControl size="small" sx={{ minWidth: 140 }}` with `InputLabel` (id from `useId`) and `Select` labeled "Story points" whose `MenuItem`s are `deck.filter(isNumericCard)`; then Save (`Button variant="contained"`, "Save to Jira", with a 16px `CircularProgress` as `startIcon` while saving); then the reset button.
 - `phase === "idle"`: the reset button only.
 - The reset button is `Button variant="outlined"` whose label is a lookup by phase (below).
+- In every phase, after the reset button: the auto-reveal switch, a `FormControlLabel` labeled "Auto-reveal" around a `Switch size="small"`. `checked` is `autoReveal` from the snapshot, `disabled` follows `disabled`, and a change calls `onAutoRevealChange(e.target.checked)`, which App sends as `{ type: "setAutoReveal", enabled }`. It is shared room state, on by default (decision 41), so every viewer sees the same value. The Reveal button stays for partial reveals.
 - Last in the row, at the far right: when `jiraSave.status === "saved"` an `Alert severity="success" sx={{ py: 0, maxWidth: 260 }}` "Saved {points} pts by {by}"; when `"error"` an `Alert severity="error"` with the same sx showing `jiraSave.message`. Decision: compact inline Alerts, not the snackbar. The snackbar stays reserved for server error messages (section 3), so a failed Jira save still shows both.
 
 Behaviors to preserve:
@@ -257,7 +258,7 @@ Props per component:
 | Players | `players={snapshot.players}`, `phase={snapshot.phase}`, `meId={me?.userId ?? null}`, `stats={snapshot.stats}` |
 | Layout | `left`, `main`, `bottom` as in the slot table above |
 | Deck | `deck={DECK}`, `selected`, `disabled`, `onSelect`, `onClear` |
-| ActionBar | `phase`, `round`, `stats`, `ticket` from snapshot, `deck={DECK}`, `disabled`, `jiraSave={snapshot.jiraSave}`, `onReveal`, `onReset`, `onSave` |
+| ActionBar | `phase`, `round`, `stats`, `ticket` from snapshot, `deck={DECK}`, `disabled`, `jiraSave={snapshot.jiraSave}`, `autoReveal={snapshot.autoReveal}`, `onAutoRevealChange`, `onReveal`, `onReset`, `onSave` |
 
 Deck should be disabled in `idle` (no round to vote in) in addition to `!connected`: pass `disabled={disabled || snapshot.phase !== "voting"}`. This is the one place App adds a phase rule; the server would reject the vote anyway, but the buttons should not invite it.
 

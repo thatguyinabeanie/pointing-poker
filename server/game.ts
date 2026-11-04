@@ -33,6 +33,9 @@ export interface GameState {
   boards: JiraBoard[];
   // Newest first. Lives in memory only, so a restart clears it.
   history: SessionHistoryEntry[];
+  // Room-wide switch, kept across rounds and tickets (newRound spreads state). Only a server
+  // restart puts it back to on.
+  autoReveal: boolean;
 }
 
 export type Result = { ok: true; state: GameState } | { ok: false; reason: string };
@@ -53,6 +56,7 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     projects: [],
     boards: [],
     history: [],
+    autoReveal: true,
   };
 }
 
@@ -88,13 +92,21 @@ export function join(state: GameState, identity: { userId: number; username: str
 
 // The vote is kept on disconnect: flaky wifi or a reload must not erase a player's card
 // mid-round. Zero-connection players are only dropped when the next round starts.
-export function leave(state: GameState, userId: number): Result {
+// Leaving can also reveal: the last player who had not voted may be the one who disconnected.
+export function leave(
+  state: GameState,
+  userId: number,
+  now: string = new Date().toISOString(),
+): Result {
   const player = state.players.get(userId);
   if (!player) return ok(state);
   return ok(
-    withPlayers(state, (players) => {
-      players.set(userId, { ...player, connections: Math.max(0, player.connections - 1) });
-    }),
+    autoRevealIfReady(
+      withPlayers(state, (players) => {
+        players.set(userId, { ...player, connections: Math.max(0, player.connections - 1) });
+      }),
+      now,
+    ),
   );
 }
 
@@ -121,23 +133,55 @@ function newRound(state: GameState, ticket: Ticket | null, phase: Phase): GameSt
   };
 }
 
-export function vote(state: GameState, userId: number, card: string): Result {
+export function vote(
+  state: GameState,
+  userId: number,
+  card: string,
+  now: string = new Date().toISOString(),
+): Result {
   if (state.phase !== "voting") return fail("not_voting");
   if (!isCard(card)) return fail("invalid_card");
   const player = state.players.get(userId);
   if (!player) return fail("unknown_player");
   return ok(
-    withPlayers(state, (players) => {
-      // Clicking the selected card again withdraws it, so there is no separate "clear" command.
-      players.set(userId, { ...player, vote: player.vote === card ? null : card });
-    }),
+    autoRevealIfReady(
+      withPlayers(state, (players) => {
+        // Clicking the selected card again withdraws it, so there is no separate "clear" command.
+        players.set(userId, { ...player, vote: player.vote === card ? null : card });
+      }),
+      now,
+    ),
   );
+}
+
+// Flips the cards once every connected player holds a vote. Disconnected players are left out
+// of the check on purpose: they keep their vote (and it shows on reveal), but a closed tab must
+// not stall the room. A withdrawn card leaves a null vote, so it never reveals.
+function autoRevealIfReady(state: GameState, now: string): GameState {
+  if (!state.autoReveal || state.phase !== "voting") return state;
+  const connected = [...state.players.values()].filter((p) => p.connections > 0);
+  if (connected.length === 0 || connected.some((p) => p.vote === null)) return state;
+  return revealState(state, now);
+}
+
+// Shared by the manual and the automatic reveal so both write session history the same way.
+function revealState(state: GameState, now: string): GameState {
+  return recordReveal({ ...state, phase: "revealed" }, now);
+}
+
+export function setAutoReveal(
+  state: GameState,
+  enabled: boolean,
+  now: string = new Date().toISOString(),
+): Result {
+  // Turning it on can reveal at once if everyone connected had already voted.
+  return ok(autoRevealIfReady({ ...state, autoReveal: enabled }, now));
 }
 
 // Partial votes are allowed: a stuck teammate should not block the room.
 export function reveal(state: GameState, now: string = new Date().toISOString()): Result {
   if (state.phase !== "voting") return fail("not_voting");
-  return ok(recordReveal({ ...state, phase: "revealed" }, now));
+  return ok(revealState(state, now));
 }
 
 const MAX_HISTORY = 50;
@@ -312,5 +356,6 @@ export function viewFor(state: GameState, viewerId: number): Snapshot {
     projects: state.projects,
     boards: state.boards,
     history: state.history,
+    autoReveal: state.autoReveal,
   };
 }

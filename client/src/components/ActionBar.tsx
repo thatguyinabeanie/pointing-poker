@@ -2,10 +2,12 @@ import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import FormControl from "@mui/material/FormControl";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import { useCallback, useEffect, useId, useState } from "react";
 import { isNumericCard } from "../../../shared/deck.ts";
 import type { JiraSave, Phase, Snapshot, Ticket } from "../../../shared/protocol.ts";
@@ -35,6 +37,8 @@ interface Props {
   deck: readonly string[];
   disabled: boolean;
   jiraSave: JiraSave;
+  autoReveal: boolean;
+  onAutoRevealChange: (enabled: boolean) => void;
   onReveal: () => void;
   onReset: (opts: { clearTicket: boolean }) => void;
   onSave: (points: number) => void;
@@ -54,6 +58,8 @@ export function ActionBar({
   deck,
   disabled,
   jiraSave,
+  autoReveal,
+  onAutoRevealChange,
   onReveal,
   onReset,
   onSave,
@@ -101,6 +107,10 @@ export function ActionBar({
     },
     [ticketKey, round],
   );
+  const onAutoRevealToggle = useCallback(
+    (e: { target: { checked: boolean } }) => onAutoRevealChange(e.target.checked),
+    [onAutoRevealChange],
+  );
   const onSaveClick = useCallback(() => onSave(Number(points)), [onSave, points]);
 
   const resetButton = (
@@ -143,6 +153,11 @@ export function ActionBar({
         </>
       )}
       {resetButton}
+      <FormControlLabel
+        label="Auto-reveal"
+        disabled={disabled}
+        control={<Switch size="small" checked={autoReveal} onChange={onAutoRevealToggle} />}
+      />
       {jiraSave.status === "saved" && (
         <Alert severity="success" sx={{ py: 0, maxWidth: 260 }}>
           Saved {jiraSave.points} pts by {jiraSave.by}
