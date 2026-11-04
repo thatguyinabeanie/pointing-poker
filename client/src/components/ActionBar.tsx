@@ -124,6 +124,12 @@ export function ActionBar({
   // not a wide grid cell.
   return (
     <Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+      {/* First in every phase, so the switch keeps its slot while the buttons change. */}
+      <FormControlLabel
+        label="Auto-reveal"
+        disabled={disabled}
+        control={<Switch size="small" checked={autoReveal} onChange={onAutoRevealToggle} />}
+      />
       {phase === "voting" && (
         <Button variant="contained" disabled={disabled} onClick={onReveal}>
           Reveal
@@ -152,11 +158,6 @@ export function ActionBar({
         </>
       )}
       {resetButton}
-      <FormControlLabel
-        label="Auto-reveal"
-        disabled={disabled}
-        control={<Switch size="small" checked={autoReveal} onChange={onAutoRevealToggle} />}
-      />
     </Stack>
   );
 }

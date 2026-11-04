@@ -2,8 +2,10 @@ import Alert from "@mui/material/Alert";
 import Snackbar from "@mui/material/Snackbar";
 import { useCallback, useEffect, useState } from "react";
 
+export type Notice = { id: number; message: string; severity: "error" | "success" };
+
 interface Props {
-  notice: { id: number; message: string; severity: "error" | "success" } | null;
+  notice: Notice | null;
 }
 
 export function NoticeSnackbar({ notice }: Props) {

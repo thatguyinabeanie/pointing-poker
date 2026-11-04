@@ -10,13 +10,11 @@ import { Deck } from "./components/Deck.tsx";
 import { Header } from "./components/Header.tsx";
 import { Layout } from "./components/Layout.tsx";
 import { LeftPanel } from "./components/LeftPanel.tsx";
-import { NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
+import { type Notice, NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
-
-type Notice = { id: number; message: string; severity: "error" | "success" };
 
 export function App() {
   const { snapshot, me, connected, send, error, disconnectedReason, search, searchResults } =
