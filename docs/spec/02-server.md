@@ -17,12 +17,14 @@ Reference implementations already exist and have been reviewed: copy `game.ts`, 
 **`shared/constants.ts`**: runtime constants shared by client and server (`ISSUE_KEY = /^[A-Z][A-Z0-9_]*-\d+$/i`, `expandBareIssueNumber(input, projectKey)`, `MIN_QUERY_LENGTH`). `ISSUE_KEY` and `expandBareIssueNumber` are used by both the loadTicket flow and `searchTickets`, so the two boxes accept the same keys and expand a bare number the same way. The project part of `ISSUE_KEY` follows the same rule as `JIRA_DEFAULT_PROJECT` and the `setQueueSettings` projectKey (a letter, then letters, digits or underscores), so a number typed in a project like `AB2` or `MY_PROJ` builds a key that passes. A separate file because protocol.ts is types-only and erased at runtime.
 
 **`server/game.ts`** (pure, imports only `shared/`; no I/O, no logging). Exports:
-`interface Player { userId: number; username: string; connections: number; vote: Card | null }`, `interface GameState { phase: Phase; ticket: Ticket | null; players: Map<number, Player>; round: number; jiraSave: JiraSave; queueSettings: QueueSettings; queue: QueueState; projects: JiraProject[]; boards: JiraBoard[]; history: SessionHistoryEntry[] }`, `type Result = { ok: true; state: GameState } | { ok: false; reason: string }`, and these functions:
-- `createInitialState(opts: { defaultProjectKey?: string | null } = {}): GameState` (phase idle, round 0, no ticket, jiraSave idle; settings `{ projectKey: defaultProjectKey ?? null, boardId: null }`; queue empty and not loading; projects and boards empty; history empty).
+`interface Player { userId: number; username: string; connections: number; vote: Card | null }`, `interface GameState { phase: Phase; ticket: Ticket | null; players: Map<number, Player>; round: number; jiraSave: JiraSave; queueSettings: QueueSettings; queue: QueueState; projects: JiraProject[]; boards: JiraBoard[]; history: SessionHistoryEntry[]; autoReveal: boolean }`, `type Result = { ok: true; state: GameState } | { ok: false; reason: string }`, and these functions:
+- `createInitialState(opts: { defaultProjectKey?: string | null } = {}): GameState` (phase idle, round 0, no ticket, jiraSave idle; settings `{ projectKey: defaultProjectKey ?? null, boardId: null }`; queue empty and not loading; projects and boards empty; history empty; `autoReveal` true).
 - `join(state, identity: { userId: number; username: string }): Result`. Always ok. Creates the player or bumps `connections` and refreshes `username`.
-- `leave(state, userId: number): Result`. Always ok. Decrements `connections` (floor 0), keeps the vote, unknown user returns the state unchanged.
-- `vote(state, userId: number, card: string): Result`. The card is a plain `string` and the function validates it. Reasons, checked in this order: `not_voting` (phase is not voting), `invalid_card` (not in `DECK`), `unknown_player`. Voting the same card again clears it.
+- `leave(state, userId: number, now = new Date().toISOString()): Result`. Always ok. Decrements `connections` (floor 0), keeps the vote, unknown user returns the state unchanged. The result goes through the auto-reveal rule below, because the last non-voter disconnecting can complete the round.
+- `vote(state, userId: number, card: string, now = new Date().toISOString()): Result`. The card is a plain `string` and the function validates it. Reasons, checked in this order: `not_voting` (phase is not voting), `invalid_card` (not in `DECK`), `unknown_player`. Voting the same card again clears it. A successful vote goes through the auto-reveal rule below.
 - `reveal(state, now = new Date().toISOString()): Result`. Reason `not_voting`. Partial votes are allowed. On success it records the round in `history` through `recordReveal`. `now` is a parameter so `game.ts` stays deterministic; `ws.ts` calls `reveal(state)` and takes the default.
+- `setAutoReveal(state, enabled: boolean, now = new Date().toISOString()): Result`. Always ok. Sets `autoReveal`, then applies the auto-reveal rule, so turning it on when every connected player has already voted reveals at once. The flag is room state: `newRound` spreads state, so it survives new rounds and tickets, and only a server restart resets it to on.
+- Auto-reveal rule (private `autoRevealIfReady`, used by `vote`, `leave` and `setAutoReveal`). When `autoReveal` is on, the phase is `voting`, at least one player has `connections > 0` and every such player holds a non-null vote, the phase becomes `revealed` and the round is recorded through `recordReveal`, exactly like a manual reveal (both share one helper). The flip is instant: no countdown and no timer. Disconnected players are ignored by the check: they keep their vote, which counts toward the stats and shows as a face-up (faded) card on reveal, but they never block it. Withdrawing a card leaves a null vote, so it never reveals. The Reveal button stays for partial reveals.
 - `recordReveal(state, now: string): GameState`. Adds or replaces the `SessionHistoryEntry` for the current ticket (no-op without a ticket). One row per ticket key: a re-reveal replaces the row, sets `revoted: true`, keeps the earlier `savedPoints` and moves the row to the top. The row copies `summary`, `issueType` and `url` from the ticket, `average`, `min`, `max` and `consensus` from `summarize`, and `voters` (players holding a vote). When every vote is non-numeric the stats are null and the row is still recorded. The list is capped at 50 rows (the oldest drop off) and is replaced, never mutated, because `viewFor` hands it out by reference.
 - `markHistorySaved(state, key: string, points: number): Result`. Always ok. Sets `savedPoints` on the row with that key. It matches by ticket key, not by round, so a save that finishes after the room moved on still lands. When no row matches it returns the same state object, which lets the caller skip a broadcast.
 - `reset(state, opts: { clearTicket?: boolean } = {}): Result`. Always ok. Prunes zero-connection players, clears votes, bumps `round`, resets `jiraSave` to idle. Without `clearTicket` it goes to `voting` on the same ticket (also from idle, ticket-less); with it, to `idle` with no ticket.
@@ -31,7 +33,7 @@ Reference implementations already exist and have been reviewed: copy `game.ts`, 
 - `canSave(state, points: number): boolean`. True only when revealed, a ticket exists, and `isNumericCard(String(points))`.
 - `summarize(players: Iterable<Player>): NonNullable<Snapshot['stats']>` (average rounded to one decimal; `consensus` is min equals max over numeric votes).
 - Queue mutators, section 14: `setQueueSettings`, `setQueueLoading`, `setQueue`, `setProjects`, `setBoards`. All return `Result` and are always ok.
-- `viewFor(state, viewerId: number): Snapshot`. Per-recipient (`history` is the same list for every viewer): before reveal other players' `vote` is null and only `hasVoted` shows; the viewer sees their own card; players sorted by `username.localeCompare`; `stats` is null until revealed.
+- `viewFor(state, viewerId: number): Snapshot`. Per-recipient (`history` is the same list for every viewer): before reveal other players' `vote` is null and only `hasVoted` shows; the viewer sees their own card; players sorted by `username.localeCompare`; `stats` is null until revealed; `autoReveal` is the same for every viewer.
 All mutators return new state objects; never mutate a state in place. The complete set of game reason strings is `not_voting`, `invalid_card`, `unknown_player`, `not_revealed`, `no_ticket`.
 
 **`server/jira.ts`** (framework-free; uses global `fetch`). Exports: `type JiraErrorReason = 'not_configured' | 'bad_credentials' | 'forbidden' | 'not_found' | 'field_not_editable' | 'rate_limited' | 'unreachable' | 'no_points_field' | 'query_too_short' | 'jira_error'`, `type JiraFailure = { ok: false; reason: JiraErrorReason; message: string }`, `type Result<T> = { ok: true; value: T } | JiraFailure`, `interface JiraClient { storyPointsFieldId(): Promise<Result<string>>; getIssue(key: string): Promise<Result<Ticket>>; setStoryPoints(key: string, points: number): Promise<Result<void>>; listProjects(): Promise<Result<JiraProject[]>>; listBoards(projectKey: string): Promise<Result<JiraBoard[]>>; boardFilterId(boardId: number): Promise<Result<number>>; searchQueue(settings: QueueSettings): Promise<Result<QueueSection[]>>; searchTickets(projectKey: string | null, query: string): Promise<Result<QueueItem[]>> }`, `interface JiraClientOptions { baseUrl: string; email: string; token: string; fieldOverride?: string; fetch?: typeof fetch; timeoutMs?: number; logger?: { debug(obj: object, msg: string): void } }`, `notConfigured(): JiraFailure`, `createJiraClient(opts: JiraClientOptions): JiraClient`. Behaviors to preserve: Basic auth header is built once and only ever sent as a header; every call uses `AbortSignal.timeout(10_000)` by default; network and timeout errors become `unreachable` with only the error name in the message; status mapping is 401 `bad_credentials`, 403 `forbidden`, 404 `not_found`, 429 `rate_limited`, 400 on PUT `field_not_editable` (message includes Jira's own text), 400 on GET and any other non-2xx `jira_error`; the Story Points field id comes from `fieldOverride`, else discovery via `GET /rest/api/3/field` (custom field named "Story Points", then "Story point estimate"), cached as a shared promise and evicted on failure; `getIssue` still succeeds without the field (`currentPoints` null) if discovery fails, and returns the rendered description, comments and changelog as described under "Ticket detail" and "Ticket history" below; `setStoryPoints` hard-requires the field and expects HTTP 204. The queue methods are specified in section 14. The token never appears in any message, so `failure.message` is safe to show to users and to log.
@@ -63,11 +65,11 @@ All mutators return new state objects; never mutate a state in place. The comple
 `shared/deck.ts`:
 
 ```ts
-export const DECK = ['0', '1', '2', '3', '5', '8', '13', '21', '?', '☕'] as const;
+export const DECK = ['0', '0.5', '1', '2', '3', '5', '8', '13', '21', '?', '☕'] as const;
 
 // Only these cards count toward average/min/max and can be saved to Jira.
 export function isNumericCard(card: string): boolean {
-  return (DECK as readonly string[]).includes(card) && /^\d+$/.test(card);
+  return (DECK as readonly string[]).includes(card) && /^\d+(\.\d+)?$/.test(card);
 }
 ```
 
@@ -150,10 +152,13 @@ export interface Snapshot {
   projects: JiraProject[];
   boards: JiraBoard[];
   history: SessionHistoryEntry[];
+  // Shared room state, same for every viewer.
+  autoReveal: boolean;
 }
 export type ClientCommand =
   | { type: 'vote'; card: Card }
   | { type: 'reveal' }
+  | { type: 'setAutoReveal'; enabled: boolean }
   | { type: 'reset'; clearTicket?: boolean }
   | { type: 'loadTicket'; key: string }
   | { type: 'saveEstimate'; points: number }
@@ -272,9 +277,10 @@ Message handling (all of it inside a try/catch that logs and sends `internal_err
 const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('vote'), card: z.string().max(8) }),
   z.object({ type: z.literal('reveal') }),
+  z.object({ type: z.literal('setAutoReveal'), enabled: z.boolean() }),
   z.object({ type: z.literal('reset'), clearTicket: z.boolean().optional() }),
   z.object({ type: z.literal('loadTicket'), key: z.string().trim().min(1).max(64) }),
-  z.object({ type: z.literal('saveEstimate'), points: z.number().int().nonnegative() }),
+  z.object({ type: z.literal('saveEstimate'), points: z.number().nonnegative() }),
   z.object({
     type: z.literal('setQueueSettings'),
     settings: z.object({
@@ -296,6 +302,7 @@ Dispatch (the identity is the socket's bound `identity`, never anything in the b
 |---|---|---|---|
 | `vote` | `game.vote(state, userId, card)` | broadcast | `not_voting` ("Voting is not open."), `invalid_card` ("That card is not in the deck."), `unknown_player` ("Refresh the page to rejoin.", also log warn) |
 | `reveal` | `game.reveal(state)` | broadcast | `not_voting` ("There is nothing to reveal.") |
+| `setAutoReveal` | `game.setAutoReveal(state, enabled)` | broadcast | none (always ok) |
 | `reset` | `game.reset(state, { clearTicket })` | broadcast | none (always ok) |
 | `loadTicket` | async flow below | broadcast | `bad_key` plus Jira reasons |
 | `saveEstimate` | async flow below | broadcast twice, then queue refresh (section 14) | `not_revealed`, `no_ticket`, `invalid_points`, `save_in_progress`, Jira failures reach users through `jiraSave.error`, not an error message |
@@ -336,6 +343,11 @@ Info: server listening, `identity mode: ...`, Jira configured flag, ws connect (
 | Payload over 4096 bytes | `ws` closes the socket itself with 1009; client reconnects; no error message |
 | Vote while idle or revealed | `error` `not_voting`; state unchanged |
 | Vote with a card not in the deck | `error` `invalid_card` |
+| Last connected player who had not voted disconnects (auto-reveal on) | `leave` reveals and records history; everyone sees the cards |
+| Auto-reveal turned on while every connected player has already voted | Reveals at once and records history |
+| A player withdraws their card (auto-reveal on) | No reveal: a null vote blocks it |
+| Empty room, or only disconnected players | No auto-reveal: at least one connected player is required |
+| The last non-voter refreshes their tab, or their socket is terminated by the heartbeat | Counts as a disconnect, so the round auto-reveals before they reconnect (follows the connected-only decision) |
 | Jira down or timeout on load | `error` `unreachable` to requester only; state unchanged; Reset still starts a ticket-less round |
 | Jira returns the issue without `renderedFields` (or in an unexpected rendered shape) | Load succeeds; `descriptionHtml` null, `comments` empty; no error message |
 | Description over 200,000 characters after sanitizing | Cut, re-sanitized and ended with `<p><em>Truncated</em></p>` |

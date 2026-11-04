@@ -4,7 +4,7 @@ import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import { alpha } from "@mui/material/styles";
 import Typography from "@mui/material/Typography";
-import { isNumericCard } from "../../../shared/deck.ts";
+import { DECK, isNumericCard } from "../../../shared/deck.ts";
 import type { Phase, PlayerView, Snapshot } from "../../../shared/protocol.ts";
 import { initials } from "../lib/initials.ts";
 
@@ -17,16 +17,16 @@ interface Props {
 
 type Outlier = "highest" | "lowest";
 
-// Highest and lowest numeric votes, only when at least two distinct values exist.
+// Highest and lowest numeric votes, only when at least two distinct values exist. Offline
+// players who voted are included: the server's stats count their vote, so their tile must
+// be able to explain the numbers.
 // Gated on phase, not on p.vote: the UI must never leak a vote before reveal even if
 // a buggy or stale snapshot carries one.
 function findOutliers(players: PlayerView[], revealed: boolean): Map<number, Outlier> {
   const result = new Map<number, Outlier>();
   if (!revealed) return result;
   const numeric = players.flatMap((p) =>
-    p.connected && p.vote !== null && isNumericCard(p.vote)
-      ? [{ id: p.userId, v: Number(p.vote) }]
-      : [],
+    p.vote !== null && isNumericCard(p.vote) ? [{ id: p.userId, v: Number(p.vote) }] : [],
   );
   const values = numeric.map((n) => n.v);
   const max = Math.max(...values);
@@ -46,6 +46,9 @@ export function Players({ players, phase, meId, stats }: Props) {
   const outliers = findOutliers(players, revealed);
   const connected = players.filter((p) => p.connected);
   const votedCount = connected.filter((p) => p.hasVoted).length;
+  // Object.entries puts integer-like keys ("1", "3") before "0.5" and "?", so the chips would
+  // not follow the deck. Walk the deck instead and keep the cards that were actually voted.
+  const countChips = stats ? DECK.filter((card) => card in stats.counts) : [];
   return (
     <Stack direction="row" useFlexGap spacing={2} sx={{ alignItems: "center", minWidth: 0 }}>
       <Stack
@@ -75,8 +78,8 @@ export function Players({ players, phase, meId, stats }: Props) {
             sx={{ flex: "0 1 auto", minWidth: 0, flexWrap: "wrap", alignItems: "center" }}
           >
             <Typography variant="body2">Avg {stats.average ?? "–"}</Typography>
-            {Object.entries(stats.counts).map(([card, n]) => (
-              <Chip key={card} size="small" label={`${card} ×${n}`} />
+            {countChips.map((card) => (
+              <Chip key={card} size="small" label={`${card} ×${stats.counts[card]}`} />
             ))}
             <Chip
               size="small"
@@ -104,6 +107,8 @@ interface PlayerProps {
 
 function Player({ player: p, isMe, revealed, outlier }: PlayerProps) {
   const faceUp = revealed && p.vote !== null;
+  // An offline player keeps the tile's dimming. Their card shows only face-up after reveal,
+  // because the server counts their vote in the stats; before reveal a card would mean nothing.
   return (
     <Box
       component="li"
@@ -131,7 +136,7 @@ function Player({ player: p, isMe, revealed, outlier }: PlayerProps) {
         >
           {initials(p.username)}
         </Avatar>
-        {p.connected ? (
+        {p.connected || faceUp ? (
           <Card
             name={p.username}
             faceUp={faceUp}
