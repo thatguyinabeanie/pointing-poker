@@ -3,6 +3,7 @@ import Link from "@mui/material/Link";
 import ListItem from "@mui/material/ListItem";
 import ListItemButton from "@mui/material/ListItemButton";
 import Stack from "@mui/material/Stack";
+import { alpha } from "@mui/material/styles";
 import Typography from "@mui/material/Typography";
 import { type MouseEvent, type ReactNode, useCallback } from "react";
 import type { QueueEpic } from "../../../shared/protocol.ts";
@@ -37,6 +38,8 @@ export function TicketRowFrame({
   secondLine,
 }: Props) {
   const onClick = useCallback(() => onPick(ticketKey), [onPick, ticketKey]);
+  // Computed for every row, but only read when there is an epic. A null epic gives the gray.
+  const epicColor = epicHex(epic?.color ?? null);
   return (
     <ListItem disablePadding>
       <ListItemButton
@@ -85,9 +88,11 @@ export function TicketRowFrame({
                 minWidth: 0,
                 maxWidth: "50%",
                 px: 0.75,
-                // An inset shadow draws the outline without adding border height, so a row with
-                // a chip stays as tall as one without (a real border made it 2px taller).
-                boxShadow: (theme) => `inset 0 0 0 1px ${theme.palette.divider}`,
+                // The tint keeps the chip visible on the white row. The outline is an inset
+                // shadow, not a border, so a row with a chip stays as tall as one without (a real
+                // border made it 2px taller).
+                bgcolor: alpha(epicColor, 0.12),
+                boxShadow: `inset 0 0 0 1px ${alpha(epicColor, 0.5)}`,
                 borderRadius: 1,
               }}
             >
@@ -98,7 +103,7 @@ export function TicketRowFrame({
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
-                  bgcolor: epicHex(epic.color),
+                  bgcolor: epicColor,
                 }}
               />
               <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
