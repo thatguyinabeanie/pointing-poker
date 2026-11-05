@@ -148,6 +148,9 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   // player started during a save is not overridden by the advance (loadSeq alone would let the
   // later-started advance win and drop the player's choice).
   let loadsPending = 0;
+  // Bumped by every accepted save, across every socket. Only the latest save may auto-advance:
+  // see the check at the end of saveEstimate.
+  let saveAttempt = 0;
   // Ticket keys with a Jira write still running. game's jiraSave resets with each round, so it
   // cannot stop a second PUT for the same ticket from a newer round; if the older PUT landed
   // last, Jira would keep the old estimate while the room showed the newer one as saved.
@@ -568,6 +571,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         return;
       }
       savesInFlight.add(key);
+      const attempt = ++saveAttempt;
       const by = username;
 
       applyState(game.markSave(state, { status: "saving", points, by }));
@@ -617,7 +621,17 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         // A reset or a ticket load can land during either await above (the Jira write and the
         // refetch), and must not be overridden: a changed round cancels the advance, and so does
         // a ticket load still in flight, which has not changed the round yet.
-        if (state.autoAdvance && state.round === round && loadsPending === 0 && nextKey !== null) {
+        // A newer save, whether still pending or already failed, cancels this one's advance. The
+        // write lock is released before the refetch, so a second Save can start during it; if the
+        // older save advanced then, the newer write would land on a changed round and its
+        // failure would be dropped as stale, so nobody would ever see it.
+        if (
+          state.autoAdvance &&
+          state.round === round &&
+          loadsPending === 0 &&
+          attempt === saveAttempt &&
+          nextKey !== null
+        ) {
           log.info({ key, nextKey }, "auto-advance");
           await loadTicket(nextKey);
         }

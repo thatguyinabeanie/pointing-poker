@@ -117,6 +117,10 @@ It does not advance when:
 
 - The save failed. The error toast shows, as today.
 - The round changed mid-save, or a ticket load is still in flight.
+- A newer save was accepted after this one (the room-level `saveAttempt` counter), whether it is
+  still pending or already failed. Added after the PR review on 11/05/2026: the write lock is
+  released before the queue refetch, so a second Save can start during it, and an older save
+  that advanced then would move the room under the newer write.
 - No next key was recorded (empty queue). The room stays on the revealed ticket.
 - The switch is off.
 
