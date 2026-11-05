@@ -1,7 +1,9 @@
 import type { EpicColor } from "../../../shared/protocol.ts";
 
 // Jira's epic palette, darkened where needed so every dot reads on the white card
-// (at least 3:1 against #FFFFFF, checked for each value).
+// (at least 3:1 against #FFFFFF, checked for each value). On the epic chip the dot sits on a
+// 12% tint of its own color instead (decision 49), where the contrast is a little lower. That
+// is fine because the dot is decorative there: the chip's text names the epic.
 const EPIC_HEX: Record<EpicColor, string> = {
   purple: "#6554C0",
   blue: "#0065FF",

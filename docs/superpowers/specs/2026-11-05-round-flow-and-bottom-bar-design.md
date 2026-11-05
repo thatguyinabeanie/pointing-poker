@@ -166,10 +166,16 @@ covers the stacked layout below `lg` and font differences.
   stay dimmed.
 - **Compact mode:** a hidden copy of the full pills (names always shown) is measured against the
   width the center column can take while staying centered: at `lg`,
-  `rowWidth - 2 * summaryWidth - 2 * columnGap`, and below `lg` the row width. The summary is
-  counted on both sides so the pills stay centered on the deck instead of drifting left (the
-  user's request on 11/05/2026). One `ResizeObserver` watches the row, the summary and the
-  hidden copy. When they do not fit, every pill drops its name and shows only the avatar and
+  `rowWidth - 2 * Math.max(summaryWidth, SUMMARY_RESERVED_WIDTH) - 2 * columnGap`, and below
+  `lg` the row width. The summary is counted on both sides so the pills stay centered on the
+  deck instead of drifting left (the user's request on 11/05/2026). `SUMMARY_RESERVED_WIDTH`
+  (400px) is a typical revealed summary (a 5-card chart, "Avg 4.5 · Median 4.5", a "Spread
+  13–21" chip, measured at 390.4px and rounded up). It makes compact mode the same in both
+  phases (the user's decision on 11/05/2026, after 7 players at 1440px showed names while
+  voting and dropped them at the reveal): a team that fits keeps its names in both phases, and
+  a team that does not is compact in both. The hidden copy sits in an absolutely positioned,
+  clipped box (`inset: 0`, `overflow: hidden`, `pointer-events: none`) so it never widens the
+  page. One `ResizeObserver` watches the row, the summary and the hidden copy. When they do not fit, every pill drops its name and shows only the avatar and
   card. The full name goes in `title` and in the card's `aria-label`. All pills switch together,
   so the row stays uniform. Compact mode is decided by measured width, not by a player count.
 - **Right, while voting:** "N of M voted" (connected players), as today.
@@ -193,6 +199,11 @@ covers the stacked layout below `lg` and font differences.
   ticket").
 - Idle: **Start round**, unchanged.
 - The `aria-label` on Save stays "Save to Jira" so screen readers keep the full meaning.
+- At `lg` the action row never wraps (`flexWrap: { xs: "wrap", lg: "nowrap" }`): at a 1200px
+  layout "Next" wrapped and overflowed the 148px bar by 19px. Between `lg` and `xl` the deck
+  gap is 4px, the cards' side padding 8px, the deck row's column gap 8px and the action
+  buttons' side padding 12px, so the right cell (272px at 1200px) holds the revealed row with
+  the Save spinner (256px). The empty left cell of the deck row is hidden below `lg`.
 
 ## 5. Ticket type filter
 
@@ -236,15 +247,24 @@ browser, and approved moving the two room switches to the header's right side.
 
 ### Client
 
-- `QueueControls.tsx` adds a "Type" `Select multiple` after Board (`minWidth` 140, `maxWidth`
-  220), with `displayEmpty` (MUI then notches the outline) and a shrunk label. `renderValue` shows "All
+- `QueueControls.tsx` adds a "Type" `Select multiple` after Board (`minWidth` 110 at `xs` and
+  140 from `sm` like Project and Board, `maxWidth` 220), with `displayEmpty` (MUI then notches the outline) and a shrunk label. `renderValue` shows "All
   types" for an empty selection, otherwise the names joined with ", ", truncated with an
-  ellipsis by the select's own styles. Each `MenuItem` holds a `Checkbox` and the type name. A
-  change calls `onChangeSettings({ issueTypes })`. It is disabled when disconnected or when the
-  type list is empty.
+  ellipsis by the select's own styles. Each `MenuItem` holds a `Checkbox` and the type name. The
+  menu edits a local draft while open (controlled `open`, the draft starts from
+  `settings.issueTypes`), and closing it calls `onChangeSettings({ issueTypes: draft })` once,
+  only when the draft differs as a set. Sending on every click lost clicks that landed before
+  the previous snapshot and refetched the room's queue per click (found in the final review).
+  It is disabled when disconnected or when the type list is empty.
 - `Header` gains an `actions` prop, rendered in the right column before the status dot in a
   flex row with gap 1. `App.tsx` moves the Auto-reveal and Auto-advance switches from
   `controls` into `actions`, so the left column holds only Project, Board, Type and Refresh.
+  Both switches are one small `RoomSwitch` component (label, checked, disabled, onToggle).
+- Header layout (final review, 11/05/2026): one row needs about 1060px (controls 484px, title
+  132px, switches and status about 380px, plus padding and gaps), so below `lg` the header is
+  two rows: the controls, then the switches, status dot and name. From `lg` it is the one
+  48px row with the title centered. The review ruled the break at `md`, but one row cannot fit
+  at 1024px, and `Layout` only needs the fixed height at `lg`.
 
 ## Docs
 
