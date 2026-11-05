@@ -313,7 +313,10 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return cachedFields;
   }
 
-  async function discoverFieldId(): Promise<Result<string>> {
+  async function discoverFieldId(retried = false): Promise<Result<string>> {
+    // The epic color lookup may have cached a list from before a Story Points field was
+    // added, so a miss on a list this call did not fetch re-reads /field once before failing.
+    const fresh = cachedFields === null;
     const listed = listFields();
     const fields = await listed;
     if (!fields.ok) return fields;
@@ -324,6 +327,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     // Evict like any other failure so a Story Points field added later is found on the next
     // call. The identity check keeps a newer in-flight list from being dropped.
     if (cachedFields === listed) cachedFields = null;
+    if (!fresh && !retried) return discoverFieldId(true);
     return fail(
       "no_points_field",
       'No custom field named "Story Points" or "Story point estimate".',
