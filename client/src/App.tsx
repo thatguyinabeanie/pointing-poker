@@ -170,14 +170,16 @@ export function App() {
                 display: "grid",
                 // The auto center column keeps the deck centered whatever width the sides take.
                 gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
-                gap: 2,
+                // 8px between lg and xl gives the actions cell the room the Save spinner needs.
+                gap: { xs: 2, lg: 1, xl: 2 },
                 alignItems: "center",
                 mt: 1,
               }}
             >
               {/* Empty left cell: the players moved to their own row above, and the cell keeps
-                  the deck centered between two equal 1fr columns. */}
-              <Box />
+                  the deck centered between two equal 1fr columns. Below lg the row stacks, where
+                  an empty cell would only add a gap above the deck. */}
+              <Box sx={{ display: { xs: "none", lg: "block" } }} />
               <Deck
                 deck={DECK}
                 selected={selected}

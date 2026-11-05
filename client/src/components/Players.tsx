@@ -57,6 +57,14 @@ const PILL_LIST_SX = {
 // rendered gap cannot disagree.
 const COLUMN_GAP = 16;
 
+// The summary width reserved on each side of the pills at lg, whatever the phase. While voting
+// the summary is a short "N of M voted", so measuring only the real summary let 7 players at
+// 1440px show names while voting and drop them at the reveal, when the chart widened it. The
+// user chose (11/05/2026) that compact mode must not depend on the phase. A typical revealed
+// summary (a bar chart for 5 cards, "Avg 4.5 · Median 4.5", a "Spread 13–21" chip) measured
+// 390.4px in Chrome; this rounds it up. A wider real summary still counts at its real width.
+const SUMMARY_RESERVED_WIDTH = 400;
+
 // The players row, the top tier of the bottom bar. At lg it uses the deck row's 1fr auto 1fr
 // grid, so the pills sit centered over the deck, with the round summary (vote count or results)
 // in the right cell. A fixed height there, so the bar never grows. Below lg the pills and the
@@ -81,6 +89,8 @@ export function Players({ players, phase, meId, stats }: Props) {
   // At lg the summary's width is counted on both sides of the center cell. The two 1fr columns
   // are only equal while the pills leave room for a column as wide as the summary on the left,
   // so this keeps the pills centered on the deck instead of drifting left as the row fills.
+  // The width is at least SUMMARY_RESERVED_WIDTH, so the answer is the same while voting and
+  // after the reveal.
   // Below lg the summary sits on its own line, so the pills get the whole row.
   // The row, the summary and the hidden copy are all observed, so a reveal (wider summary), a
   // join, a leave or a long new name re-checks even when the window width is unchanged.
@@ -92,7 +102,9 @@ export function Players({ players, phase, meId, stats }: Props) {
     if (!row || !summary || !measure) return;
     const check = () => {
       const available = isLg
-        ? row.clientWidth - 2 * summary.getBoundingClientRect().width - 2 * COLUMN_GAP
+        ? row.clientWidth -
+          2 * Math.max(summary.getBoundingClientRect().width, SUMMARY_RESERVED_WIDTH) -
+          2 * COLUMN_GAP
         : row.clientWidth;
       setCompact(measure.scrollWidth > available);
     };
@@ -162,25 +174,33 @@ export function Players({ players, phase, meId, stats }: Props) {
           connectedCount={connected.length}
         />
       </Box>
+      {/* The clipping box keeps the max-content copy from widening the page: on its own, a
+          copy wider than the window (12 or more players) added a horizontal scrollbar. */}
       <Box
-        component="ul"
-        ref={measureRef}
         aria-hidden
         sx={{
-          ...PILL_LIST_SX,
-          visibility: "hidden",
           position: "absolute",
-          top: 0,
-          left: 0,
-          height: 0,
+          inset: 0,
           overflow: "hidden",
-          whiteSpace: "nowrap",
-          // max-content so the copy is never squeezed to the row width, which would make
-          // scrollWidth report the squeezed width instead of what the pills need.
-          width: "max-content",
+          pointerEvents: "none",
+          visibility: "hidden",
         }}
       >
-        {pills(false)}
+        <Box
+          component="ul"
+          ref={measureRef}
+          sx={{
+            ...PILL_LIST_SX,
+            height: 0,
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            // max-content so the copy is never squeezed to the row width, which would make
+            // scrollWidth report the squeezed width instead of what the pills need.
+            width: "max-content",
+          }}
+        >
+          {pills(false)}
+        </Box>
       </Box>
     </Box>
   );

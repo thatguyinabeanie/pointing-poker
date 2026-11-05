@@ -1,5 +1,6 @@
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
+import type { Theme } from "@mui/material/styles";
 import { useCallback } from "react";
 
 interface Props {
@@ -12,10 +13,13 @@ interface Props {
 
 export function Deck({ deck, selected, disabled, onSelect, onClear }: Props) {
   return (
+    // Between lg and xl the bar's right cell is narrow (221px at a 1200px layout) and the
+    // revealed actions need 272px with the Save spinner. A 4px gap and tighter card padding
+    // shrink the deck there so the two side cells grow; from xl up there is room to spare.
     <Stack
       direction="row"
       useFlexGap
-      spacing={1}
+      spacing={{ xs: 1, lg: 0.5, xl: 1 }}
       sx={{ flexWrap: "wrap" }}
       role="group"
       aria-label="Voting cards"
@@ -33,6 +37,16 @@ export function Deck({ deck, selected, disabled, onSelect, onClear }: Props) {
     </Stack>
   );
 }
+
+// Side padding drops to 8px between lg and xl (see Deck), so "0.5", "13", "21" and "☕" shrink
+// to the 48px minimum like the other cards. Module level so the sx is not rebuilt per render.
+const CARD_SX = (theme: Theme) => ({
+  minWidth: 48,
+  height: 64,
+  fontSize: 20,
+  transition: "transform 120ms",
+  [theme.breakpoints.between("lg", "xl")]: { px: 1 },
+});
 
 interface CardProps {
   card: string;
@@ -55,13 +69,7 @@ function DeckCard({ card, isSelected, disabled, onSelect, onClear }: CardProps) 
       disabled={disabled}
       onClick={onClick}
       // Lift is on the button, not the group, so the focus ring travels with the card.
-      sx={{
-        minWidth: 48,
-        height: 64,
-        fontSize: 20,
-        transition: "transform 120ms",
-        transform: isSelected ? "translateY(-4px)" : "none",
-      }}
+      sx={[CARD_SX, { transform: isSelected ? "translateY(-4px)" : "none" }]}
     >
       {card}
     </Button>
