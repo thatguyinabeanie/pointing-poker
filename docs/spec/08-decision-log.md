@@ -71,6 +71,8 @@ Numbers are stable references; new decisions are appended, never renumbered.
 
 43. **Save feedback is a top-center toast, shared with errors (11/04/2026).** This is the user's decision. The inline alert after Save to Jira ("Saved 2 pts by name" or Jira's error) made the bottom bar taller, so the whole layout jumped. The result now shows as a toast at the top center, for everyone in the room, and only for a client that sees the save go from `saving` to `saved` or `error`, so joining or refreshing afterwards shows nothing. Errors and save results share one `NoticeSnackbar` (severity error or success, 6 seconds, close button, ignores clickaway), so two toasts never stack, and the existing error toasts moved to top center too. The Save button spinner is unchanged. Client only: no server or protocol change. Described in `03-client.md`.
 
+44. **Each queue row shows its epic as a chip in Jira's color (11/04/2026).** This is the user's decision. The team asked to see which epic a ticket belongs to without opening it. Line 1 of each queue and search row now carries an outlined chip between the key and the status badge, with a dot in the epic's Jira color and the epic name. Matching Jira's colors costs one extra request per refresh, because the epic color is not on the child ticket. An epic Jira gives no color shows a gray dot. The chip is on line 1 so line 2 stays the summary, and it truncates before the key or badge do. Session history rows are unchanged. Described in `03-client.md`.
+
 ## Where each decision is specified
 
 - Architecture, stack and repo layout: `01-overview.md`.
