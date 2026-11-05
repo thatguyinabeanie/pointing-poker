@@ -13,6 +13,20 @@ interface Props {
   actions?: ReactNode;
 }
 
+// The standard visually-hidden clip pattern below lg, undone at lg where the title shows.
+const TITLE_SX = {
+  fontWeight: 600,
+  position: { xs: "absolute", lg: "static" },
+  width: { xs: "1px", lg: "auto" },
+  height: { xs: "1px", lg: "auto" },
+  overflow: { xs: "hidden", lg: "visible" },
+  clip: { xs: "rect(0 0 0 0)", lg: "auto" },
+  whiteSpace: "nowrap",
+  m: { xs: "-1px", lg: 0 },
+  border: 0,
+  p: 0,
+} as const;
+
 export function Header({ connected, meName, controls, actions }: Props) {
   const status = connected ? "Connected" : "Reconnecting…";
   return (
@@ -43,12 +57,10 @@ export function Header({ connected, meName, controls, actions }: Props) {
     >
       {/* minWidth 0 lets the controls shrink instead of widening the grid and pushing the title. */}
       <Box sx={{ minWidth: 0, display: "flex", alignItems: "center", gridRow: 1 }}>{controls}</Box>
-      {/* Hidden below lg, where the two rows leave no centered slot for it. */}
-      <Typography
-        variant="subtitle1"
-        component="h1"
-        sx={{ fontWeight: 600, display: { xs: "none", lg: "block" } }}
-      >
+      {/* Below lg the two rows leave no centered slot for the title, so it is visually hidden
+          there. Not display: none, which also hid it from screen readers and left the page with
+          no h1 below lg. */}
+      <Typography variant="subtitle1" component="h1" sx={TITLE_SX}>
         Pointing Poker
       </Typography>
       <Box
