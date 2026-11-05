@@ -22,7 +22,7 @@ client/src/lib/epicColors.ts      epicHex(color): Jira epic color name to hex, g
 client/src/lib/estimate.ts        suggestPoints (reference, copy as is)
 client/src/lib/initials.ts        initials(name) for avatars (Players, EntryRow)
 client/src/lib/relativeTime.ts    relativeTime(iso): short "2d" labels (EntryRow, SessionHistory)
-client/src/components/Header.tsx             slim light header: queue controls and Auto-reveal switch, title, status dot and username
+client/src/components/Header.tsx             slim light header: queue controls and the Auto-reveal and Auto-advance switches, title, status dot and username
 client/src/components/layoutConstants.ts     HEADER_HEIGHT (48), shared by Header and Layout
 client/src/components/QueueControls.tsx      Project and Board selects and Refresh (moved out of QueuePanel)
 client/src/components/LeftPanel.tsx          the left pane's card: Queue and History tabs
@@ -55,7 +55,7 @@ Props: `{ connected: boolean; meName?: string; controls?: ReactNode }`. A `Box c
 
 ### components/QueueControls.tsx
 
-Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header gives it the full width below `sm`, see Header). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads. The Auto-reveal switch is not part of this component, which stays about the queue. App renders it as a sibling right after `QueueControls` inside the `controls` fragment, in the header's left group: a `FormControlLabel` labeled "Auto-reveal" (`sx` `ml: 1`, `mr: 0`, `flexShrink: 0`, `whiteSpace: "nowrap"`) around a `Switch size="small"`, vertically centered with the selects by the header slot's flex `alignItems: "center"`. `checked` is `snapshot.autoReveal`, `disabled` follows `disabled`, and a change calls `onAutoRevealChange(e.target.checked)`, which sends `{ type: "setAutoReveal", enabled }`. It is shared room state, on by default (decision 41), so every viewer sees the same value.
+Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header gives it the full width below `sm`, see Header). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads. The Auto-reveal switch is not part of this component, which stays about the queue. App renders it as a sibling right after `QueueControls` inside the `controls` fragment, in the header's left group: a `FormControlLabel` labeled "Auto-reveal" (`sx` `ml: 1`, `mr: 0`, `flexShrink: 0`, `whiteSpace: "nowrap"`) around a `Switch size="small"`, vertically centered with the selects by the header slot's flex `alignItems: "center"`. `checked` is `snapshot.autoReveal`, `disabled` follows `disabled`, and a change calls `onAutoRevealChange(e.target.checked)`, which sends `{ type: "setAutoReveal", enabled }`. It is shared room state, on by default (decision 41), so every viewer sees the same value. A second `FormControlLabel` + small `Switch` labeled "Auto-advance" follows it with the same `sx`. `checked` is `snapshot.autoAdvance`, `disabled` follows `disabled`, and a change calls `onAutoAdvanceChange(e.target.checked)`, which sends `{ type: "setAutoAdvance", enabled }`. It is shared room state, off by default (decision 46).
 
 ### components/LeftPanel.tsx
 
@@ -270,6 +270,7 @@ Command mapping, all through one helper `dispatch(cmd: ClientCommand)`:
 | Click an unselected card | `{ type: "vote", card: card as Card }` (Deck's `onSelect` gives `string`; cast to `Card`, which is imported as a type from shared/protocol.ts) |
 | Click the selected card (clear) | `{ type: "vote", card: selected }` because the server toggles; `selected` is non-null whenever `onClear` can fire, but guard with `if (selected)` |
 | Reveal | `{ type: "reveal" }` |
+| Toggle the Auto-advance switch (header) | `{ type: "setAutoAdvance", enabled }` (shows `snapshot.autoAdvance`) |
 | Toggle the Auto-reveal switch (header) | `{ type: "setAutoReveal", enabled }` (the switch shows `snapshot.autoReveal`, so it follows the room, not local state) |
 | Next ticket (phase `revealed`) | `{ type: "reset", clearTicket: true }`; returns to `idle` so the team picks the next ticket from the queue |
 | Reset (phase `voting`) / Start round (phase `idle`) | `{ type: "reset" }` |

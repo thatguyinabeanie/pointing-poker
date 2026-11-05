@@ -97,6 +97,14 @@ export function App() {
     (e: { target: { checked: boolean } }) => onAutoRevealChange(e.target.checked),
     [onAutoRevealChange],
   );
+  const onAutoAdvanceChange = useCallback(
+    (enabled: boolean) => dispatch({ type: "setAutoAdvance", enabled }),
+    [dispatch],
+  );
+  const onAutoAdvanceToggle = useCallback(
+    (e: { target: { checked: boolean } }) => onAutoAdvanceChange(e.target.checked),
+    [onAutoAdvanceChange],
+  );
   const onReset = useCallback(
     ({ clearTicket }: { clearTicket: boolean }) =>
       dispatch(clearTicket ? { type: "reset", clearTicket: true } : { type: "reset" }),
@@ -233,6 +241,18 @@ export function App() {
                     size="small"
                     checked={snapshot.autoReveal}
                     onChange={onAutoRevealToggle}
+                  />
+                }
+              />
+              <FormControlLabel
+                label="Auto-advance"
+                disabled={disabled}
+                sx={{ ml: 1, mr: 0, flexShrink: 0, whiteSpace: "nowrap" }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={snapshot.autoAdvance}
+                    onChange={onAutoAdvanceToggle}
                   />
                 }
               />

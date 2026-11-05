@@ -17,6 +17,7 @@ const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("vote"), card: z.string().max(8) }),
   z.object({ type: z.literal("reveal") }),
   z.object({ type: z.literal("setAutoReveal"), enabled: z.boolean() }),
+  z.object({ type: z.literal("setAutoAdvance"), enabled: z.boolean() }),
   z.object({ type: z.literal("reset"), clearTicket: z.boolean().optional() }),
   z.object({ type: z.literal("loadTicket"), key: z.string().trim().min(1).max(64) }),
   // No .int(): 0.5 is a card. game.canSave still rejects anything that is not a numeric deck value.
@@ -445,6 +446,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
           applyState(game.setAutoReveal(state, cmd.enabled));
           broadcast();
           return;
+        case "setAutoAdvance":
+          applyState(game.setAutoAdvance(state, cmd.enabled));
+          broadcast();
+          return;
         case "reset":
           // Bumped so a loadTicket still waiting on Jira is dropped; otherwise it would start a
           // new round when it resolves and wipe votes cast since this reset.
@@ -522,6 +527,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       if (state.ticket === null) return;
       const round = state.round;
       const key = state.ticket.key;
+      // Taken before the write: the queue is refetched afterward and the saved ticket drops out.
+      const nextKey = game.nextQueueKey(state.queue, key);
       if (state.jiraSave.status === "saving" || savesInFlight.has(key)) {
         sendError(socket, "save_in_progress", MESSAGES.save_in_progress);
         return;
@@ -572,6 +579,13 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         // The ticket has points now, so it leaves the queue, even when the round went stale.
         // Not subject to the 5s refresh window.
         await fetchQueue();
+
+        // The round is checked again because a reset or a ticket load can land during either
+        // await above (the Jira write and the refetch), and must not be overridden.
+        if (state.autoAdvance && state.round === round && nextKey !== null) {
+          log.info({ key, nextKey }, "auto-advance");
+          await loadTicket(nextKey);
+        }
       });
     }
 

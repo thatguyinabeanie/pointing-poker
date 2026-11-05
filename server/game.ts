@@ -36,6 +36,9 @@ export interface GameState {
   // Room-wide switch, kept across rounds and tickets (newRound spreads state). Only a server
   // restart puts it back to on.
   autoReveal: boolean;
+  // Room-wide switch, kept across rounds (newRound spreads state). Off by default, and a server
+  // restart turns it off again.
+  autoAdvance: boolean;
 }
 
 export type Result = { ok: true; state: GameState } | { ok: false; reason: string };
@@ -57,6 +60,7 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     boards: [],
     history: [],
     autoReveal: true,
+    autoAdvance: false,
   };
 }
 
@@ -173,6 +177,20 @@ export function setAutoReveal(
 ): Result {
   // Turning it on can reveal at once if everyone connected had already voted.
   return ok(autoRevealIfReady({ ...state, autoReveal: enabled }, now));
+}
+
+// Only sets the flag. The advance itself happens in ws.ts after a successful Jira save.
+export function setAutoAdvance(state: GameState, enabled: boolean): Result {
+  return ok({ ...state, autoAdvance: enabled });
+}
+
+// The ticket after currentKey in queue order (sprints first, then backlog), or the first ticket
+// when currentKey is not queued. Null when there is nothing to advance to.
+export function nextQueueKey(queue: QueueState, currentKey: string | null): string | null {
+  const keys = queue.sections.flatMap((section) => section.items.map((item) => item.key));
+  const at = currentKey === null ? -1 : keys.indexOf(currentKey);
+  if (at === -1) return keys[0] ?? null;
+  return keys.slice(at + 1).find((key) => key !== currentKey) ?? null;
 }
 
 // Partial votes are allowed: a stuck teammate should not block the room.
@@ -377,5 +395,6 @@ export function viewFor(state: GameState, viewerId: number): Snapshot {
     boards: state.boards,
     history: state.history,
     autoReveal: state.autoReveal,
+    autoAdvance: state.autoAdvance,
   };
 }

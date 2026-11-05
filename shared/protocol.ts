@@ -169,12 +169,14 @@ export interface Snapshot {
   history: SessionHistoryEntry[];
   // Shared room state, same for every viewer.
   autoReveal: boolean;
+  autoAdvance: boolean;
 }
 
 export type ClientCommand =
   | { type: "vote"; card: Card }
   | { type: "reveal" }
   | { type: "setAutoReveal"; enabled: boolean }
+  | { type: "setAutoAdvance"; enabled: boolean }
   | { type: "reset"; clearTicket?: boolean }
   | { type: "loadTicket"; key: string }
   | { type: "saveEstimate"; points: number }
