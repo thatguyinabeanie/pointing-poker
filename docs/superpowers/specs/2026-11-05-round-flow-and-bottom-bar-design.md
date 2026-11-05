@@ -54,7 +54,10 @@ common vote, ties to the higher card).
   row, so a refresh would find nothing to update and the vote would never reach History. With
   `recordReveal` the vote creates the row, or marks an existing row from an earlier round
   re-voted, the same way a fresh reveal would. Later votes in the same reveal refresh that row
-  in place.
+  in place. The test is a round-level flag, `GameState.revealRecorded` (set when `recordReveal`
+  writes a row, cleared by `newRound`, not in the Snapshot), not "were there votes before this
+  vote": after a reveal with votes where everyone withdrew, the row exists, and the next vote
+  must refresh it rather than mark it re-voted (PR follow-up, 11/05/2026).
 - Someone who joins during the reveal can vote. This needs no change: `join` adds the player and
   `vote` accepts them.
 - The `jiraSave` status is left as is. A save that already happened stays saved, and Save stays

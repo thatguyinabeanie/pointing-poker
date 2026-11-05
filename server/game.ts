@@ -42,6 +42,12 @@ export interface GameState {
   // Room-wide switch, kept across rounds (newRound spreads state). Off by default, and a server
   // restart turns it off again.
   autoAdvance: boolean;
+  // Whether this round's reveal has written its history row. A vote during `revealed` refreshes
+  // that row when it exists and records it otherwise (an empty reveal writes none). Checking for
+  // votes instead got "reveal with votes, everyone withdraws, someone votes again" wrong: the row
+  // existed, but the empty room looked like an empty reveal and the row was marked re-voted.
+  // newRound resets it. Server-only; not part of the Snapshot.
+  revealRecorded: boolean;
 }
 
 export type Result = { ok: true; state: GameState } | { ok: false; reason: string };
@@ -66,6 +72,7 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     history: [],
     autoReveal: true,
     autoAdvance: false,
+    revealRecorded: false,
   };
 }
 
@@ -139,6 +146,7 @@ function newRound(state: GameState, ticket: Ticket | null, phase: Phase): GameSt
     phase,
     round: state.round + 1,
     jiraSave: { status: "idle" },
+    revealRecorded: false,
   };
 }
 
@@ -156,17 +164,13 @@ export function vote(
     // Clicking the selected card again withdraws it, so there is no separate "clear" command.
     players.set(userId, { ...player, vote: player.vote === card ? null : card });
   });
-  // Before the reveal, auto-reveal may fire. After it, a vote change updates the history row in
-  // place, except after an empty reveal: recordReveal wrote nothing then (or left an older row
-  // from a previous round untouched), so refreshing would drop this first vote or edit the old
-  // round's row in place. That vote is the round's first result, so it is recorded the way a
-  // fresh reveal would be.
+  // Before the reveal, auto-reveal may fire. After it, a vote change updates this round's history
+  // row in place. When the reveal wrote no row (an empty reveal), refreshing would drop this
+  // first vote or edit an older round's row in place, so the vote is recorded the way a fresh
+  // reveal would be. The flag, not the current votes, decides: a room where everyone withdrew
+  // after a real reveal still has its row, and must not mark it re-voted.
   if (next.phase !== "revealed") return ok(autoRevealIfReady(next, now));
-  return ok(hasVotes(state) ? refreshRevealedRow(next) : recordReveal(next, now));
-}
-
-function hasVotes(state: GameState): boolean {
-  return [...state.players.values()].some((p) => p.vote !== null);
+  return ok(next.revealRecorded ? refreshRevealedRow(next) : recordReveal(next, now));
 }
 
 // Flips the cards once every connected player holds a vote. Disconnected players are left out
@@ -263,7 +267,7 @@ export function recordReveal(state: GameState, now: string): GameState {
     revealedAt: now,
   };
   const rest = state.history.filter((r) => r.key !== ticket.key);
-  return { ...state, history: [row, ...rest].slice(0, MAX_HISTORY) };
+  return { ...state, history: [row, ...rest].slice(0, MAX_HISTORY), revealRecorded: true };
 }
 
 // Keyed by ticket, not by round, so a save that finishes after the room moved on still lands.
