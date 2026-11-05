@@ -269,6 +269,10 @@ browser, and approved moving the two room switches to the header's right side.
   `settings.issueTypes`), and closing it calls `onChangeSettings({ issueTypes: draft })` once,
   only when the draft differs as a set. Sending on every click lost clicks that landed before
   the previous snapshot and refetched the room's queue per click (found in the final review).
+  The draft is compared with the selection at open, and it is sent only when the room's
+  selection still equals that value; if someone else changed the filter meanwhile, the stale
+  draft is dropped. A project change or the select turning disabled closes the menu and
+  discards the draft (PR follow-up, 11/05/2026).
   It is disabled when disconnected or when the type list is empty.
 - `Header` gains an `actions` prop, rendered in the right column before the status dot in a
   flex row with gap 1. `App.tsx` moves the Auto-reveal and Auto-advance switches from

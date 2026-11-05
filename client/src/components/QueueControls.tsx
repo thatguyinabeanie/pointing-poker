@@ -7,7 +7,7 @@ import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import { useCallback, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { sameNames } from "../../../shared/constants.ts";
 import type { JiraBoard, JiraProject, QueueSettings } from "../../../shared/protocol.ts";
 
@@ -66,13 +66,20 @@ export function QueueControls({
   // The Type menu edits a local draft and sends it once, on close. Sending on every click made
   // each click a room-wide queue refetch, and a click landing before the previous snapshot came
   // back was computed from the stale selection and undid the earlier click.
-  const [typesOpen, setTypesOpen] = useState(false);
+  // While open, typesSession remembers the room's selection and project at open, so a change
+  // someone else makes meanwhile is never overwritten by this stale draft (see onTypesClose).
+  const [typesSession, setTypesSession] = useState<{
+    atOpen: string[];
+    projectKey: string | null;
+  } | null>(null);
+  const typesOpen = typesSession !== null;
+  const typesDisabled = disabled || issueTypes.length === 0;
   const [typesDraft, setTypesDraft] = useState<string[]>([]);
   const typesValue = typesOpen ? typesDraft : settings.issueTypes;
   const onTypesOpen = useCallback(() => {
     setTypesDraft(settings.issueTypes);
-    setTypesOpen(true);
-  }, [settings.issueTypes]);
+    setTypesSession({ atOpen: settings.issueTypes, projectKey: settings.projectKey });
+  }, [settings.issueTypes, settings.projectKey]);
   const onTypesChange = useCallback((e: SelectChangeEvent<string[]>) => {
     const { value } = e.target;
     // MUI types a multiple select's value as string | string[]; the string form only comes
@@ -80,10 +87,26 @@ export function QueueControls({
     setTypesDraft(typeof value === "string" ? value.split(",") : value);
   }, []);
   const onTypesClose = useCallback(() => {
-    setTypesOpen(false);
+    if (typesSession === null) return;
+    setTypesSession(null);
     // Opening and closing without a net change sends nothing, so the room does not refetch.
-    if (!sameNames(typesDraft, settings.issueTypes)) onChangeSettings({ issueTypes: typesDraft });
-  }, [typesDraft, settings.issueTypes, onChangeSettings]);
+    // If the room's selection changed while the menu was open (another user's edit), the draft
+    // was built on the old selection and sending it would undo that edit, so it is dropped.
+    if (
+      !sameNames(typesDraft, typesSession.atOpen) &&
+      sameNames(settings.issueTypes, typesSession.atOpen)
+    ) {
+      onChangeSettings({ issueTypes: typesDraft });
+    }
+  }, [typesSession, typesDraft, settings.issueTypes, onChangeSettings]);
+  // A project change (it clears the filter and loads other types) or the select turning disabled
+  // makes the draft meaningless, so the menu closes and the draft is discarded. Closing through
+  // state does not call onClose, so nothing is sent.
+  useEffect(() => {
+    if (typesSession && (typesDisabled || settings.projectKey !== typesSession.projectKey)) {
+      setTypesSession(null);
+    }
+  }, [typesSession, typesDisabled, settings.projectKey]);
 
   // One row from lg, where the header is a fixed 48px tall and a second line would be clipped.
   // Below lg the header grows, and at phone width the three selects (110px each) and Refresh do
@@ -148,7 +171,7 @@ export function QueueControls({
       <FormControl
         size="small"
         sx={{ minWidth: { xs: 110, sm: 140 }, maxWidth: 220 }}
-        disabled={disabled || issueTypes.length === 0}
+        disabled={typesDisabled}
       >
         {/* displayEmpty shows "All types" with an empty value. MUI notches the outline for
             displayEmpty but does not shrink the label, which would then sit on the text. */}
