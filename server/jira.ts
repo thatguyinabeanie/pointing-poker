@@ -35,6 +35,7 @@ export interface JiraClient {
   setStoryPoints(key: string, points: number): Promise<Result<void>>;
   listProjects(): Promise<Result<JiraProject[]>>;
   listBoards(projectKey: string): Promise<Result<JiraBoard[]>>;
+  listIssueTypes(projectKey: string): Promise<Result<string[]>>;
   boardType(boardId: number): Promise<Result<string>>;
   searchQueue(settings: QueueSettings): Promise<Result<QueueSection[]>>;
   searchTickets(projectKey: string | null, query: string): Promise<Result<QueueItem[]>>;
@@ -693,6 +694,37 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return { ok: true, value };
   }
 
+  // The Type filter's menu. The project endpoint lists the types the project's scheme allows,
+  // which is the set `issuetype in (...)` accepts for this project. Cached like the boards.
+  async function listIssueTypes(projectKey: string): Promise<Result<string[]>> {
+    const cacheKey = `issueTypes:${projectKey}`;
+    const cached = cacheGet<string[]>(cacheKey);
+    if (cached) return { ok: true, value: cached };
+
+    const res = await request(
+      "GET",
+      `/rest/api/3/project/${encodeURIComponent(projectKey)}`,
+      undefined,
+      {
+        notFoundMessage: `Jira project ${projectKey} not found, or not visible to this account (404).`,
+      },
+    );
+    if (!res.ok) return res;
+    const project = parseJson(res.text) as { issueTypes?: { name?: unknown }[] } | undefined;
+    if (!project || !Array.isArray(project.issueTypes)) {
+      return fail("jira_error", "Jira returned an unreadable issue type list.");
+    }
+    // A Set keeps Jira's order. Team-managed projects can list two types with one name, and the
+    // menu and the JQL work by name, so a repeat would only be a duplicate menu row.
+    const names = new Set<string>();
+    for (const t of project.issueTypes) {
+      if (typeof t?.name === "string" && t.name.trim() !== "") names.add(t.name);
+    }
+    const value = [...names];
+    cachePut(cacheKey, value);
+    return { ok: true, value };
+  }
+
   // The board type decides how the queue is sectioned: scrum boards have sprints, kanban
   // boards do not. Cached like the other board lookups.
   async function boardType(boardId: number): Promise<Result<string>> {
@@ -731,7 +763,13 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     // A ticket needs pointing when it is not Done and has no Story Points. Any To Do status
     // counts (Untriaged and Backlog alike); a label filter used to hide unpointed Backlog
     // tickets, so it was removed (decision log, 10/15/2026).
-    const clause = `statusCategory != Done AND ${pointsField} is EMPTY`;
+    // The Type filter joins the clause here, so the board and no-board paths and the count all
+    // filter the same way, and the per-section cap applies after filtering (decision 50).
+    const typeFilter =
+      settings.issueTypes.length > 0
+        ? ` AND issuetype in (${settings.issueTypes.map(jqlQuote).join(", ")})`
+        : "";
+    const clause = `statusCategory != Done AND ${pointsField} is EMPTY${typeFilter}`;
 
     if (settings.boardId === null) {
       const found = await searchIssues(
@@ -1082,6 +1120,8 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     projectKey: string | null,
     query: string,
   ): Promise<Result<QueueItem[]>> {
+    // The room's Type filter is not applied here on purpose: search is one person's lookup, and
+    // it must still find any ticket, including one of a type the queue is hiding (decision 50).
     const q = query.trim();
     if (q.length < MIN_QUERY_LENGTH) {
       return fail("query_too_short", `Type at least ${MIN_QUERY_LENGTH} characters to search.`);
@@ -1113,6 +1153,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     setStoryPoints,
     listProjects,
     listBoards,
+    listIssueTypes,
     boardType,
     searchQueue,
     searchTickets,

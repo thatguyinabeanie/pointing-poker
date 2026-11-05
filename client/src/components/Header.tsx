@@ -8,9 +8,12 @@ interface Props {
   connected: boolean;
   meName?: string;
   controls?: ReactNode;
+  // Room switches, shown on the right before the status dot. They moved out of `controls` so
+  // the left column holds only the queue selects (decision 50).
+  actions?: ReactNode;
 }
 
-export function Header({ connected, meName, controls }: Props) {
+export function Header({ connected, meName, controls, actions }: Props) {
   const status = connected ? "Connected" : "Reconnecting…";
   return (
     <Box
@@ -69,6 +72,9 @@ export function Header({ connected, meName, controls }: Props) {
           gap: 1,
         }}
       >
+        {actions ? (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>{actions}</Box>
+        ) : null}
         <Tooltip title={status}>
           <Box
             role="img"

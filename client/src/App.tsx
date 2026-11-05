@@ -18,6 +18,10 @@ import { QueueControls } from "./components/QueueControls.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
 
+// mr 0 drops the label's default 16px right margin; the header's gap spaces the switches.
+// ml 0 replaces the default -11px, which would pull a switch into the item before it.
+const SWITCH_LABEL_SX = { ml: 0, mr: 0, flexShrink: 0, whiteSpace: "nowrap" } as const;
+
 export function App() {
   const { snapshot, me, connected, send, error, disconnectedReason, search, searchResults } =
     useGameSocket();
@@ -222,23 +226,28 @@ export function App() {
         meName={me?.username}
         controls={
           snapshot ? (
+            <QueueControls
+              settings={snapshot.queueSettings}
+              projects={snapshot.projects}
+              boards={snapshot.boards}
+              issueTypes={snapshot.issueTypes}
+              disabled={disabled}
+              refreshing={snapshot.queue.loading}
+              onChangeSettings={onChangeSettings}
+              onRefresh={onRefresh}
+            />
+          ) : undefined
+        }
+        actions={
+          snapshot ? (
+            // Room settings, not queue settings. In the action bar Auto-reveal wrapped "Next
+            // ticket" onto a second row after reveal; on the left both switches crowded the
+            // Project, Board and Type selects, so they sit on the right (decision 50).
             <>
-              <QueueControls
-                settings={snapshot.queueSettings}
-                projects={snapshot.projects}
-                boards={snapshot.boards}
-                disabled={disabled}
-                refreshing={snapshot.queue.loading}
-                onChangeSettings={onChangeSettings}
-                onRefresh={onRefresh}
-              />
-              {/* A room setting like Project and Board. In the action bar it wrapped "Next ticket"
-                  onto a second row after reveal. The ml replaces the label's default -11px
-                  margin so it sits one gap after the refresh button. */}
               <FormControlLabel
                 label="Auto-reveal"
                 disabled={disabled}
-                sx={{ ml: 1, mr: 0, flexShrink: 0, whiteSpace: "nowrap" }}
+                sx={SWITCH_LABEL_SX}
                 control={
                   <Switch
                     size="small"
@@ -250,7 +259,7 @@ export function App() {
               <FormControlLabel
                 label="Auto-advance"
                 disabled={disabled}
-                sx={{ ml: 1, mr: 0, flexShrink: 0, whiteSpace: "nowrap" }}
+                sx={SWITCH_LABEL_SX}
                 control={
                   <Switch
                     size="small"
