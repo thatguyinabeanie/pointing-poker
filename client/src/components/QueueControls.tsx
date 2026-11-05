@@ -7,7 +7,7 @@ import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { sameNames } from "../../../shared/constants.ts";
 import type { JiraBoard, JiraProject, QueueSettings } from "../../../shared/protocol.ts";
 
@@ -95,9 +95,21 @@ export function QueueControls({
   const typesDisabled = disabled || issueTypes.length === 0;
   const [typesDraft, setTypesDraft] = useState<string[]>([]);
   const typesValue = typesOpen ? typesDraft : settings.issueTypes;
+  // The selection this client last sent, until the room's snapshot echoes it back. If the user
+  // closes the menu and reopens it before the echo arrives, settings.issueTypes is still the
+  // pre-edit selection, so using it as the baseline would make the echo look like someone else's
+  // change and silently drop the second edit. Reopening starts from lastSent instead, and the
+  // close check accepts either value as "unchanged".
+  const lastSent = useRef<string[] | null>(null);
+  useEffect(() => {
+    if (lastSent.current && sameNames(settings.issueTypes, lastSent.current)) {
+      lastSent.current = null;
+    }
+  }, [settings.issueTypes]);
   const onTypesOpen = useCallback(() => {
-    setTypesDraft(settings.issueTypes);
-    setTypesSession({ atOpen: settings.issueTypes, projectKey: settings.projectKey });
+    const baseline = lastSent.current ?? settings.issueTypes;
+    setTypesDraft(baseline);
+    setTypesSession({ atOpen: baseline, projectKey: settings.projectKey });
   }, [settings.issueTypes, settings.projectKey]);
   const onTypesChange = useCallback((e: SelectChangeEvent<string[]>) => {
     const { value } = e.target;
@@ -111,10 +123,13 @@ export function QueueControls({
     // Opening and closing without a net change sends nothing, so the room does not refetch.
     // If the room's selection changed while the menu was open (another user's edit), the draft
     // was built on the old selection and sending it would undo that edit, so it is dropped.
-    if (
-      !sameNames(typesDraft, typesSession.atOpen) &&
-      sameNames(settings.issueTypes, typesSession.atOpen)
-    ) {
+    // The room matching our own last send (lastSent) is not someone else's edit, so it counts
+    // as unchanged too.
+    const roomUnchanged =
+      sameNames(settings.issueTypes, typesSession.atOpen) ||
+      (lastSent.current !== null && sameNames(settings.issueTypes, lastSent.current));
+    if (!sameNames(typesDraft, typesSession.atOpen) && roomUnchanged) {
+      lastSent.current = typesDraft;
       onChangeSettings({ issueTypes: typesDraft });
     }
   }, [typesSession, typesDraft, settings.issueTypes, onChangeSettings]);

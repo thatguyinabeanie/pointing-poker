@@ -247,8 +247,14 @@ interface PillProps {
 
 // The pill shows the username's first word ("Ana" for "Ana Lima"), so more players keep their
 // names before the row goes compact. The full username stays in the title and every aria-label.
+// Trailing punctuation is stripped so "Lima, Ana" shows "Lima" rather than "Lima,". If nothing
+// is left (a username like ", Ana" or ";"), the full username is shown.
 function shortName(username: string): string {
-  return username.trim().split(/\s+/)[0] || username;
+  const first = username
+    .trim()
+    .split(/\s+/)[0]
+    .replace(/[,.;:]+$/, "");
+  return first || username;
 }
 
 function Pill({ player: p, isMe, revealed, outlier, compact }: PillProps) {
