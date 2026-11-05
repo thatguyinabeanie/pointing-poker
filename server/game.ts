@@ -155,8 +155,17 @@ export function vote(
     // Clicking the selected card again withdraws it, so there is no separate "clear" command.
     players.set(userId, { ...player, vote: player.vote === card ? null : card });
   });
-  // After the reveal a vote change updates the history row in place; before it, auto-reveal may fire.
-  return ok(next.phase === "revealed" ? refreshRevealedRow(next) : autoRevealIfReady(next, now));
+  // Before the reveal, auto-reveal may fire. After it, a vote change updates the history row in
+  // place, except after an empty reveal: recordReveal wrote nothing then (or left an older row
+  // from a previous round untouched), so refreshing would drop this first vote or edit the old
+  // round's row in place. That vote is the round's first result, so it is recorded the way a
+  // fresh reveal would be.
+  if (next.phase !== "revealed") return ok(autoRevealIfReady(next, now));
+  return ok(hasVotes(state) ? refreshRevealedRow(next) : recordReveal(next, now));
+}
+
+function hasVotes(state: GameState): boolean {
+  return [...state.players.values()].some((p) => p.vote !== null);
 }
 
 // Flips the cards once every connected player holds a vote. Disconnected players are left out

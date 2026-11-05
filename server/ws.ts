@@ -3,7 +3,7 @@ import type { RawData, WebSocket } from "ws";
 import { z } from "zod";
 import { expandBareIssueNumber, ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
 import { DECK } from "../shared/deck.ts";
-import type { QueueSection, QueueSettings, ServerMessage } from "../shared/protocol.ts";
+import type { QueueSection, QueueSettings, ServerMessage, Ticket } from "../shared/protocol.ts";
 import { env } from "./env.ts";
 import * as game from "./game.ts";
 import { trackSocket } from "./heartbeat.ts";
@@ -144,6 +144,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   }
   let state = game.createInitialState({ defaultProjectKey });
   let loadSeq = 0;
+  // Ticket loads still waiting on Jira, across every socket. Auto-advance checks it so a load a
+  // player started during a save is not overridden by the advance (loadSeq alone would let the
+  // later-started advance win and drop the player's choice).
+  let loadsPending = 0;
   // Ticket keys with a Jira write still running. game's jiraSave resets with each round, so it
   // cannot stop a second PUT for the same ticket from a newer round; if the older PUT landed
   // last, Jira would keep the old estimate while the room showed the newer one as saved.
@@ -517,7 +521,13 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       key = key.toUpperCase();
 
       const seq = ++loadSeq;
-      const res = await jira.getIssue(key);
+      loadsPending += 1;
+      let res: JiraResult<Ticket>;
+      try {
+        res = await jira.getIssue(key);
+      } finally {
+        loadsPending -= 1;
+      }
       if (seq !== loadSeq) {
         log.debug({ key }, "dropped stale loadTicket result");
         return;
@@ -604,9 +614,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         // Not subject to the 5s refresh window.
         await fetchQueue();
 
-        // The round is checked again because a reset or a ticket load can land during either
-        // await above (the Jira write and the refetch), and must not be overridden.
-        if (state.autoAdvance && state.round === round && nextKey !== null) {
+        // A reset or a ticket load can land during either await above (the Jira write and the
+        // refetch), and must not be overridden: a changed round cancels the advance, and so does
+        // a ticket load still in flight, which has not changed the round yet.
+        if (state.autoAdvance && state.round === round && loadsPending === 0 && nextKey !== null) {
           log.info({ key, nextKey }, "auto-advance");
           await loadTicket(nextKey);
         }

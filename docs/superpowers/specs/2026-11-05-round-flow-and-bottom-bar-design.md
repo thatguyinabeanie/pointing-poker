@@ -49,6 +49,12 @@ common vote, ties to the higher card).
   `revoted` to true whenever a row already exists. If the votes drop to zero, the row keeps its
   last values. This matches `recordReveal`, where an empty reveal records nothing. The helper
   returns the same state object when there is no ticket or no row, so callers can skip work.
+- Exception (added in the final review on 11/05/2026): when the reveal was empty (zero votes
+  before this vote), the vote goes through `recordReveal` instead. The empty reveal wrote no
+  row, so a refresh would find nothing to update and the vote would never reach History. With
+  `recordReveal` the vote creates the row, or marks an existing row from an earlier round
+  re-voted, the same way a fresh reveal would. Later votes in the same reveal refresh that row
+  in place.
 - Someone who joins during the reveal can vote. This needs no change: `join` adds the player and
   `vote` accepts them.
 - The `jiraSave` status is left as is. A save that already happened stays saved, and Save stays
@@ -99,15 +105,18 @@ In the existing `runAsync` block, after a successful write in the same round:
 1. `markSave` and `markHistorySaved` run and the room is broadcast, as today. Everyone sees the
    "Saved N pts by name" toast.
 2. `fetchQueue()` runs, as today.
-3. If `state.autoAdvance` is on, `state.round` still equals the saved round, and a next key was
-   recorded, call the existing `loadTicket(nextKey)`. The round is checked again here, after the
-   awaits, because someone may have reset or loaded a ticket while the save or the queue fetch
-   was in flight.
+3. If `state.autoAdvance` is on, `state.round` still equals the saved round, no ticket load is
+   waiting on Jira (`loadsPending === 0`), and a next key was recorded, call the existing
+   `loadTicket(nextKey)`. The round is checked again here, after the awaits, because someone
+   may have reset or loaded a ticket while the save or the queue fetch was in flight. A load
+   that has not finished yet has not changed the round, so the room-level `loadsPending`
+   counter (shared by every socket, next to `loadSeq`) covers it; without it the advance would
+   start later, take a newer `loadSeq`, and drop the player's load.
 
 It does not advance when:
 
 - The save failed. The error toast shows, as today.
-- The round changed mid-save.
+- The round changed mid-save, or a ticket load is still in flight.
 - No next key was recorded (empty queue). The room stays on the revealed ticket.
 - The switch is off.
 
@@ -141,8 +150,8 @@ The bar (the `bottom` slot in `Layout`) has two rows inside the existing `Paper`
    and `ActionBar` on the right.
 
 The bar has one fixed height in every phase. `Layout.tsx` drops the `minHeight` (88),
-`maxHeight` (140) and `overflowY` rules on the bar. `BOTTOM_BAR_FALLBACK_HEIGHT` is updated to
-the new height. The `ResizeObserver` that publishes `--bottom-bar-height` stays, because it also
+`maxHeight` (140) and `overflowY` rules on the bar. `BOTTOM_BAR_HEIGHT` (148) is the new fixed
+height. The `ResizeObserver` that publishes `--bottom-bar-height` stays, because it also
 covers the stacked layout below `lg` and font differences.
 
 ### Players row (`Players.tsx`)
