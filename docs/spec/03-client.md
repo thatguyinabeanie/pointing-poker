@@ -22,9 +22,9 @@ client/src/lib/epicColors.ts      epicHex(color): Jira epic color name to hex, g
 client/src/lib/estimate.ts        suggestPoints (reference, copy as is)
 client/src/lib/initials.ts        initials(name) for avatars (Players, EntryRow)
 client/src/lib/relativeTime.ts    relativeTime(iso): short "2d" labels (EntryRow, SessionHistory)
-client/src/components/Header.tsx             slim light header: queue controls and the Auto-reveal and Auto-advance switches, title, status dot and username
+client/src/components/Header.tsx             slim light header: queue controls on the left, title, then the Auto-reveal and Auto-advance switches, status dot and username on the right
 client/src/components/layoutConstants.ts     HEADER_HEIGHT (48), shared by Header and Layout
-client/src/components/QueueControls.tsx      Project and Board selects and Refresh (moved out of QueuePanel)
+client/src/components/QueueControls.tsx      Project, Board and Type selects and Refresh (moved out of QueuePanel)
 client/src/components/LeftPanel.tsx          the left pane's card: Queue and History tabs
 client/src/components/QueuePanel.tsx         search, queue sections, two-line clickable rows
 client/src/components/SessionHistory.tsx     this room's revealed tickets, newest first
@@ -52,11 +52,11 @@ client/src/components/NoticeSnackbar.tsx
 
 ### components/Header.tsx
 
-Props: `{ connected: boolean; meName?: string; controls?: ReactNode }`. A `Box component="header"` of height `HEADER_HEIGHT` (48, from `layoutConstants.ts`, so `Layout` and `Header` always agree), light grey background and a bottom border, not an `AppBar`. A three-column grid `1fr auto 1fr` keeps the title centered whatever the side widths are. Left: the `controls` slot (App passes `QueueControls`, and passes nothing until the first snapshot). Center: "Pointing Poker" as the page's only `h1`, hidden below `md`. Below `md` the grid is `minmax(0,1fr) auto` (controls take the free width, status on the right); below `sm` it is one column and the header grows to two rows (status above, controls below, `height: auto`, `minHeight` 48) because the controls need about 270px and do not fit beside the status at 320px. From `sm` the height is the fixed 48, and `Layout` uses `HEADER_HEIGHT` only at `lg` and up. Right: a status dot (green with tooltip "Connected", amber with tooltip and visible text "Reconnecting…" when disconnected) and the viewer's username. Color is never the only signal.
+Props: `{ connected: boolean; meName?: string; controls?: ReactNode; actions?: ReactNode }`. A `Box component="header"` of height `HEADER_HEIGHT` (48, from `layoutConstants.ts`, so `Layout` and `Header` always agree), light grey background and a bottom border, not an `AppBar`. A three-column grid `1fr auto 1fr` keeps the title centered whatever the side widths are. Left: the `controls` slot (App passes `QueueControls`, and passes nothing until the first snapshot). Center: "Pointing Poker" as the page's only `h1`, hidden below `md`. Below `md` the grid is `minmax(0,1fr) auto` (controls take the free width, status on the right); below `sm` it is one column and the header grows to two rows (status above, controls below, `height: auto`, `minHeight` 48) because the controls need about 270px and do not fit beside the status at 320px. From `sm` the height is the fixed 48, and `Layout` uses `HEADER_HEIGHT` only at `lg` and up. Right: the `actions` slot first (App passes the Auto-reveal and Auto-advance switches once a snapshot exists), in its own flex row with gap 1 and `flexShrink: 0`, then a status dot (green with tooltip "Connected", amber with tooltip and visible text "Reconnecting…" when disconnected) and the viewer's username. Color is never the only signal.
 
 ### components/QueueControls.tsx
 
-Props: `{ settings, projects, boards, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules. Single row with no wrap (the header gives it the full width below `sm`, see Header). The selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads. The Auto-reveal switch is not part of this component, which stays about the queue. App renders it as a sibling right after `QueueControls` inside the `controls` fragment, in the header's left group: a `FormControlLabel` labeled "Auto-reveal" (`sx` `ml: 1`, `mr: 0`, `flexShrink: 0`, `whiteSpace: "nowrap"`) around a `Switch size="small"`, vertically centered with the selects by the header slot's flex `alignItems: "center"`. `checked` is `snapshot.autoReveal`, `disabled` follows `disabled`, and a change calls `onAutoRevealChange(e.target.checked)`, which sends `{ type: "setAutoReveal", enabled }`. It is shared room state, on by default (decision 41), so every viewer sees the same value. A second `FormControlLabel` + small `Switch` labeled "Auto-advance" follows it with the same `sx`. `checked` is `snapshot.autoAdvance`, `disabled` follows `disabled`, and a change calls `onAutoAdvanceChange(e.target.checked)`, which sends `{ type: "setAutoAdvance", enabled }`. It is shared room state, off by default (decision 46).
+Props: `{ settings, projects, boards, issueTypes, disabled, onChangeSettings, onRefresh, refreshing? }`. The Project select, Board select and Refresh icon button that used to be the first row of `QueuePanel`, with the same handlers and disabled rules, and a Type select between Board and Refresh (decision 50). Type is a `Select multiple` labeled "Type" (`minWidth` 140, `maxWidth` 220) over `issueTypes` (App passes `snapshot.issueTypes`, the project's type names). Its value is `settings.issueTypes`, the room's selection, shown as is so the closed select matches what the server filters by. It uses `displayEmpty` (MUI then notches the outline) with a shrunk `InputLabel`, so the label never sits on the text. `renderValue` shows "All types" for an empty selection, otherwise the names joined with ", ", truncated with an ellipsis by the select's own nowrap styles. Each `MenuItem` (dense) holds a small `Checkbox` and a `ListItemText` with the name. A change calls `onChangeSettings({ issueTypes })` (a string value from autofill is split on commas). It is disabled when `disabled` is true or when `issueTypes` is empty (no project, or the type list failed to load). Single row with no wrap (the header gives it the full width below `sm`, see Header). The Project and Board selects have `minWidth` 110 at `xs` and 140 from `sm`. `refreshing` (App passes `snapshot.queue.loading`) keeps Refresh disabled while the queue loads. The Auto-reveal switch is not part of this component, which stays about the queue. App passes it to the Header's `actions` slot, on the right before the status dot (moved from the left group by decision 50, so the left holds only Project, Board, Type and Refresh): a `FormControlLabel` labeled "Auto-reveal" (`sx` `ml: 0`, `mr: 0`, `flexShrink: 0`, `whiteSpace: "nowrap"`, shared as `SWITCH_LABEL_SX` in App) around a `Switch size="small"`, vertically centered by the slot's flex `alignItems: "center"`. `checked` is `snapshot.autoReveal`, `disabled` follows `disabled`, and a change calls `onAutoRevealChange(e.target.checked)`, which sends `{ type: "setAutoReveal", enabled }`. It is shared room state, on by default (decision 41), so every viewer sees the same value. A second `FormControlLabel` + small `Switch` labeled "Auto-advance" follows it with the same `sx`. `checked` is `snapshot.autoAdvance`, `disabled` follows `disabled`, and a change calls `onAutoAdvanceChange(e.target.checked)`, which sends `{ type: "setAutoAdvance", enabled }`. It is shared room state, off by default (decision 46).
 
 ### components/LeftPanel.tsx
 
@@ -163,7 +163,7 @@ MUI composition: one `Stack direction="row" useFlexGap spacing={1} sx={{ alignIt
 - `phase === "revealed"`: a `FormControl size="small" sx={{ minWidth: 96 }}` with `InputLabel` (id from `useId`) and `Select` labeled "Points" whose `MenuItem`s are `deck.filter(isNumericCard)`; then Save (`Button variant="contained"`, visible text "Save" with `aria-label="Save to Jira"`, with a 16px `CircularProgress` as `startIcon` while saving); then the reset button. The labels are short so the revealed controls fit one row at laptop widths (decision 48).
 - `phase === "idle"`: the reset button only.
 - The reset button is `Button variant="outlined"` whose label is a lookup by phase (below).
-- The Auto-reveal switch is not in this bar. It lives in the header next to the Project and Board controls (see `QueueControls`), because in the bar it wrapped the reset button onto a second row after reveal (decision 41). The Reveal button stays for partial reveals.
+- The Auto-reveal switch is not in this bar. It lives in the header's right side, before the status dot (see `QueueControls`), because in the bar it wrapped the reset button onto a second row after reveal (decision 41). The Reveal button stays for partial reveals.
 - The save result is not shown in the bar. It appears as a top-center toast from App (decision 43), so the bar never changes height. `jiraSave` is still a prop because `status === "saving"` drives the Save button spinner.
 
 Behaviors to preserve:
@@ -234,7 +234,7 @@ Search (`search(query)`): `useCallback` with an empty dependency list. It trims 
 
 ```
 <>
-  <Header connected={connected} meName={me?.username} controls={snapshot ? <QueueControls ... /> : undefined} />
+  <Header connected={connected} meName={me?.username} controls={snapshot ? <QueueControls ... /> : undefined} actions={snapshot ? <>Auto-reveal and Auto-advance switches</> : undefined} />
   ...content...
   <NoticeSnackbar notice={notice} />
 </>
@@ -264,8 +264,8 @@ Props per component:
 
 | Component | Props |
 |---|---|
-| Header | `connected`, `meName={me?.username}`, `controls` (a fragment with QueueControls and the Auto-reveal switch once a snapshot exists) |
-| QueueControls | `settings={snapshot.queueSettings}`, `projects`, `boards`, `disabled`, `refreshing={snapshot.queue.loading}`, `onChangeSettings`, `onRefresh` |
+| Header | `connected`, `meName={me?.username}`, `controls` (QueueControls once a snapshot exists), `actions` (a fragment with the Auto-reveal and Auto-advance switches once a snapshot exists) |
+| QueueControls | `settings={snapshot.queueSettings}`, `projects`, `boards`, `issueTypes={snapshot.issueTypes}`, `disabled`, `refreshing={snapshot.queue.loading}`, `onChangeSettings`, `onRefresh` |
 | LeftPanel | `history={snapshot.history}`, plus the `QueuePanel` props below |
 | QueuePanel | `queue={snapshot.queue}`, `searchResults` (from the hook), `currentKey={snapshot.ticket?.key ?? null}`, `disabled`, `onPick`, `onSearch={search}`, `boardUrl` |
 | TicketView | `ticket={snapshot.ticket}` |

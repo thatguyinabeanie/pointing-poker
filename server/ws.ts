@@ -33,6 +33,7 @@ const commandSchema = z.discriminatedUnion("type", [
         .nullable()
         .optional(),
       boardId: z.number().int().positive().nullable().optional(),
+      issueTypes: z.array(z.string().trim().min(1).max(64)).max(30).optional(),
     }),
   }),
   z.object({ type: z.literal("refreshQueue") }),
@@ -150,6 +151,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   let errorId = 0;
   let queueSeq = 0;
   let boardsSeq = 0;
+  let issueTypesSeq = 0;
   let lastQueueRefreshAt = 0;
   let bootstrapped = false;
   const registry = new Map<number, Set<WebSocket>>();
@@ -265,6 +267,26 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     return outcome.status === "failed" ? outcome.failure : null;
   }
 
+  // Runs wherever the boards are fetched for a project, with the same stale guard. A failure is
+  // only logged: the list stays as it was (empty after a project change), which disables the
+  // Type menu and leaves the queue unfiltered, so there is nothing for the user to act on.
+  async function fetchIssueTypes(): Promise<void> {
+    const projectKey = state.queueSettings.projectKey;
+    if (projectKey === null) return;
+    const seq = ++issueTypesSeq;
+    const res = await jira.listIssueTypes(projectKey);
+    if (seq !== issueTypesSeq || state.queueSettings.projectKey !== projectKey) {
+      app.log.debug({ projectKey }, "dropped stale issue types result");
+      return;
+    }
+    if (!res.ok) {
+      app.log.warn({ reason: res.reason, projectKey }, "issue types fetch failed");
+      return;
+    }
+    applyState(game.setIssueTypes(state, res.value));
+    broadcast();
+  }
+
   // Resolves JIRA_DEFAULT_BOARD (numeric id or board name) against the default project's boards
   // and applies it before the first queue fetch. Any miss leaves boardId null so the queue works.
   async function applyDefaultBoard(): Promise<void> {
@@ -341,6 +363,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     }
     bootstrapped = true;
     void fetchProjectsOnce().catch(onThrow);
+    // The queue does not wait for it: no filter can be set before the menu has types.
+    void fetchIssueTypes().catch(onThrow);
     // The queue waits for default board resolution so its first fetch uses the resolved board.
     void (async () => {
       if (defaultBoard === null) {
@@ -607,16 +631,20 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         runAsync(async () => {
           await fetchBoards();
         });
+        runAsync(fetchIssueTypes);
       }
+      // Any effective change refetches, including a Type filter change on its own.
       runAsync(fetchQueue);
     }
 
     async function refreshProjects(): Promise<void> {
       // jira.ts caches both lists for 10 minutes and the protocol has no cache-bypass argument,
-      // so inside that window this re-sends the cached lists.
+      // so inside that window this re-sends the cached lists. The issue types are refreshed too,
+      // but never reported: fetchIssueTypes only logs its failures.
       const [projectsFailure, boardsFailure] = await Promise.all([
         fetchProjectsOnce(),
         fetchBoards(),
+        fetchIssueTypes(),
       ]);
       const failure = projectsFailure ?? boardsFailure;
       if (failure) sendError(socket, failure.reason, failure.message);

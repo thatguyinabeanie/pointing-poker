@@ -27,6 +27,7 @@ rail beside it, and a two-tier bar). The user chose the two-tier bar.
 2. Auto-advance room switch.
 3. Median in the reveal stats.
 4. Two-tier bottom bar with a fixed height.
+5. Ticket type filter as a shared room setting (added 11/05/2026).
 
 Out of scope: a Re-vote button, the median on session history rows, a "changed after reveal"
 marker on cards, an observer role, and any change to how suggested points are picked (the most
@@ -184,10 +185,62 @@ covers the stacked layout below `lg` and font differences.
 - Idle: **Start round**, unchanged.
 - The `aria-label` on Save stays "Save to Jira" so screen readers keep the full meaning.
 
+## 5. Ticket type filter
+
+The user asked on 11/05/2026 for a way to filter the queue by ticket type. The user chose a
+shared room filter applied in the Jira query (complete results) over a per-viewer filter in the
+browser, and approved moving the two room switches to the header's right side.
+
+### Protocol and room state
+
+- `QueueSettings.issueTypes: string[]`. Empty means all types. `createInitialState` sets `[]`.
+- `GameState.issueTypes: string[]` is the project's type names for the menu (not the
+  selection). It defaults to `[]`, is set by `setIssueTypes(state, types)`, and is sent as
+  `Snapshot.issueTypes` by `viewFor`.
+- `setQueueSettings` accepts `issueTypes` in the partial. It keeps only names that are in
+  `state.issueTypes`, without repeats, because Jira answers 400 to `issuetype in (...)` with an
+  unknown name. A selection with the same names in another order is not a change.
+- A project change sets `issueTypes` to `[]` and clears the type list, in the same place that
+  clears `boardId` and `boards`, because each project has its own types.
+- The `setQueueSettings` zod schema in `ws.ts` gains
+  `issueTypes: z.array(z.string().trim().min(1).max(64)).max(30).optional()`.
+
+### Jira (`server/jira.ts`)
+
+- `listIssueTypes(projectKey)` calls `GET /rest/api/3/project/{key}` and returns the distinct
+  `issueTypes[].name` values in Jira's order. It is cached for 10 minutes per project like the
+  boards, and a bad shape returns `jira_error`.
+- `searchQueue` appends ` AND issuetype in ("A", "B")` to the needs-pointing `clause` when
+  `settings.issueTypes` is not empty. That one place covers the board path, the no-board path
+  and the `approximateCount` call, so the per-section cap and the counts apply after filtering.
+- `searchTickets` is not filtered. Search is one person's lookup and must still find any ticket.
+
+### Socket wiring (`server/ws.ts`)
+
+- `fetchIssueTypes()` runs wherever the boards are fetched for a project: at bootstrap, on a
+  project change, and in `refreshProjects`. It has its own sequence counter and the same
+  project guard as the boards fetch, so a stale project's list is dropped. The result is
+  applied with `setIssueTypes` and broadcast.
+- A failed fetch logs one warn line and leaves the list as it was (empty after a project
+  change). The menu is then disabled and the queue unfiltered. The user gets no error.
+- Any effective `issueTypes` change refetches the queue, like a board change.
+
+### Client
+
+- `QueueControls.tsx` adds a "Type" `Select multiple` after Board (`minWidth` 140, `maxWidth`
+  220), with `displayEmpty` (MUI then notches the outline) and a shrunk label. `renderValue` shows "All
+  types" for an empty selection, otherwise the names joined with ", ", truncated with an
+  ellipsis by the select's own styles. Each `MenuItem` holds a `Checkbox` and the type name. A
+  change calls `onChangeSettings({ issueTypes })`. It is disabled when disconnected or when the
+  type list is empty.
+- `Header` gains an `actions` prop, rendered in the right column before the status dot in a
+  flex row with gap 1. `App.tsx` moves the Auto-reveal and Auto-advance switches from
+  `controls` into `actions`, so the left column holds only Project, Board, Type and Refresh.
+
 ## Docs
 
 - `docs/spec/08-decision-log.md`: entries 45 to 48, one each for changing votes after the reveal,
-  auto-advance, the median, and the two-tier bar.
+  auto-advance, the median, and the two-tier bar, and entry 50 for the ticket type filter.
 - `docs/spec/02-server.md`: the vote rule, the history refresh, `autoAdvance`, `nextQueueKey`,
   the post-save advance, and `median`.
 - `docs/spec/03-client.md`: the bottom bar, `Players`, `ActionBar`, the deck's disabled rule,
@@ -210,3 +263,7 @@ There are no tests (decision 6). Verification is:
    - Join 12 or more dev users. The pills switch to avatar-only, and the bar height does not
      change.
    - The bar height is the same in idle, voting and revealed.
+   - Pick two types in the Type menu. The queue refetches for everyone with only those types,
+     and the closed select lists them. Clear the selection and it reads "All types".
+   - Change the project. The Type selection clears and the menu lists the new project's types.
+   - With a type filter on, search finds a ticket of a hidden type.

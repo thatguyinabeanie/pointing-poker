@@ -31,6 +31,8 @@ export interface GameState {
   queue: QueueState;
   projects: JiraProject[];
   boards: JiraBoard[];
+  // The project's issue type names (the Type menu), not the selection in queueSettings.
+  issueTypes: string[];
   // Newest first. Lives in memory only, so a restart clears it.
   history: SessionHistoryEntry[];
   // Room-wide switch, kept across rounds and tickets (newRound spreads state). Only a server
@@ -54,10 +56,12 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     queueSettings: {
       projectKey: opts.defaultProjectKey ?? null,
       boardId: null,
+      issueTypes: [],
     },
     queue: { sections: [], loading: false, error: null, fetchedAt: null },
     projects: [],
     boards: [],
+    issueTypes: [],
     history: [],
     autoReveal: true,
     autoAdvance: false,
@@ -282,21 +286,44 @@ export function setQueueSettings(state: GameState, partial: Partial<QueueSetting
   const next: QueueSettings = { ...state.queueSettings };
   if (partial.projectKey !== undefined) next.projectKey = partial.projectKey;
   if (partial.boardId !== undefined) next.boardId = partial.boardId;
+  if (partial.issueTypes !== undefined) {
+    // Only names from the project's own list: Jira answers 400 to `issuetype in (...)` with an
+    // unknown name, so a selection sent for the previous project would fail the whole queue.
+    // With no list loaded every name is dropped, which leaves the queue unfiltered.
+    const known = new Set(state.issueTypes);
+    next.issueTypes = [...new Set(partial.issueTypes)].filter((name) => known.has(name));
+  }
 
   const projectChanged = next.projectKey !== state.queueSettings.projectKey;
   // A board belongs to one project, so a project change always drops the board, even if
   // the same message also named one (that id was picked from the old project's list).
-  if (projectChanged) next.boardId = null;
+  // Issue types are per project too, so the type filter is dropped in the same place.
+  if (projectChanged) {
+    next.boardId = null;
+    next.issueTypes = [];
+  }
 
-  const changed = projectChanged || next.boardId !== state.queueSettings.boardId;
+  const changed =
+    projectChanged ||
+    next.boardId !== state.queueSettings.boardId ||
+    !sameNames(next.issueTypes, state.queueSettings.issueTypes);
   if (!changed) return ok(state);
 
   return ok({
     ...state,
     queueSettings: next,
     boards: projectChanged ? [] : state.boards,
+    issueTypes: projectChanged ? [] : state.issueTypes,
     queue: { ...state.queue, loading: true },
   });
+}
+
+// Order-insensitive: the menu sends names in click order, and the JQL `in (...)` ignores order,
+// so a reordered selection is not a change and must not refetch the queue.
+function sameNames(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(b);
+  return a.every((name) => set.has(name));
 }
 
 export function setQueueLoading(state: GameState): Result {
@@ -324,6 +351,10 @@ export function setProjects(state: GameState, projects: JiraProject[]): Result {
 
 export function setBoards(state: GameState, boards: JiraBoard[]): Result {
   return ok({ ...state, boards });
+}
+
+export function setIssueTypes(state: GameState, types: string[]): Result {
+  return ok({ ...state, issueTypes: types });
 }
 
 export function markSave(state: GameState, save: JiraSave): Result {
@@ -398,6 +429,7 @@ export function viewFor(state: GameState, viewerId: number): Snapshot {
     queue: state.queue,
     projects: state.projects,
     boards: state.boards,
+    issueTypes: state.issueTypes,
     history: state.history,
     autoReveal: state.autoReveal,
     autoAdvance: state.autoAdvance,

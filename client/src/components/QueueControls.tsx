@@ -1,7 +1,9 @@
 import RefreshIcon from "@mui/icons-material/Refresh";
+import Checkbox from "@mui/material/Checkbox";
 import FormControl from "@mui/material/FormControl";
 import IconButton from "@mui/material/IconButton";
 import InputLabel from "@mui/material/InputLabel";
+import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
@@ -12,6 +14,8 @@ interface Props {
   settings: QueueSettings;
   projects: JiraProject[];
   boards: JiraBoard[];
+  // The project's issue type names (the menu), not the selection in settings.issueTypes.
+  issueTypes: string[];
   disabled: boolean;
   // The old Refresh button was also disabled while the queue loaded; the caller passes that in.
   refreshing?: boolean;
@@ -23,10 +27,17 @@ interface Props {
 // header and clips it. Trimming the vertical padding gives a 32px control with room for the label.
 const SELECT_SX = { "& .MuiSelect-select": { py: 0.5 } };
 
+// An empty selection means all types, so the closed select says so instead of looking blank.
+// The select's own nowrap and ellipsis styles truncate a long list at the control's maxWidth.
+function renderTypes(selected: string[]): string {
+  return selected.length === 0 ? "All types" : selected.join(", ");
+}
+
 export function QueueControls({
   settings,
   projects,
   boards,
+  issueTypes,
   disabled,
   refreshing = false,
   onChangeSettings,
@@ -34,6 +45,7 @@ export function QueueControls({
 }: Props) {
   const projectLabelId = useId();
   const boardLabelId = useId();
+  const typeLabelId = useId();
 
   // Show the stored selection only if it is a real option; MUI warns on unknown values.
   const projectValue = projects.some((p) => p.key === settings.projectKey)
@@ -48,6 +60,15 @@ export function QueueControls({
   const onBoardChange = useCallback(
     (e: SelectChangeEvent<number | "">) =>
       onChangeSettings({ boardId: e.target.value === "" ? null : e.target.value }),
+    [onChangeSettings],
+  );
+  const onTypesChange = useCallback(
+    (e: SelectChangeEvent<string[]>) => {
+      const { value } = e.target;
+      // MUI types a multiple select's value as string | string[]; the string form only comes
+      // from browser autofill, as a comma-joined list.
+      onChangeSettings({ issueTypes: typeof value === "string" ? value.split(",") : value });
+    },
     [onChangeSettings],
   );
 
@@ -91,6 +112,36 @@ export function QueueControls({
           {boards.map((b) => (
             <MenuItem key={b.id} value={b.id}>
               {b.name}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      {/* The value is the room's stored selection, not filtered to the menu: it is what the
+          server filters the queue by, so the closed select must show exactly that. */}
+      <FormControl
+        size="small"
+        sx={{ minWidth: 140, maxWidth: 220 }}
+        disabled={disabled || issueTypes.length === 0}
+      >
+        {/* displayEmpty shows "All types" with an empty value. MUI notches the outline for
+            displayEmpty but does not shrink the label, which would then sit on the text. */}
+        <InputLabel id={typeLabelId} shrink>
+          Type
+        </InputLabel>
+        <Select<string[]>
+          sx={SELECT_SX}
+          labelId={typeLabelId}
+          label="Type"
+          multiple
+          displayEmpty
+          value={settings.issueTypes}
+          onChange={onTypesChange}
+          renderValue={renderTypes}
+        >
+          {issueTypes.map((name) => (
+            <MenuItem key={name} value={name} dense>
+              <Checkbox size="small" checked={settings.issueTypes.includes(name)} sx={{ p: 0.5 }} />
+              <ListItemText primary={name} />
             </MenuItem>
           ))}
         </Select>

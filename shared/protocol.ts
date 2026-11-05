@@ -89,6 +89,8 @@ export interface PlayerView {
 export interface QueueSettings {
   projectKey: string | null;
   boardId: number | null;
+  // Jira issue type names to keep in the queue. Empty means all types.
+  issueTypes: string[];
 }
 // The server maps Jira's raw color values into this fixed set, so the client never sees raw Jira values.
 export type EpicColor =
@@ -166,6 +168,8 @@ export interface Snapshot {
   queue: QueueState;
   projects: JiraProject[];
   boards: JiraBoard[];
+  // The project's issue type names, in Jira's order, for the Type filter menu.
+  issueTypes: string[];
   // Newest first. Same list for every viewer.
   history: SessionHistoryEntry[];
   // Shared room state, same for every viewer.
