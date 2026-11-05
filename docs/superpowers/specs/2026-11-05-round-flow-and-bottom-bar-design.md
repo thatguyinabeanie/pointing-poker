@@ -182,8 +182,7 @@ covers the stacked layout below `lg` and font differences.
   shows only the avatar and card. The full name goes in `title` and in the card's `aria-label`.
   All pills switch together, so the row stays uniform. Compact mode is decided by measured
   width, not by a player count, and measuring the hidden copy means dropping the names cannot
-  flip the decision back.
-- **Position:** the pills, named or compact, stay exactly centered over the deck while they fit
+  flip the decision back. Position: the pills, named or compact, stay exactly centered over the deck while they fit
   in `rowWidth - 2 * Math.max(summaryWidth, SUMMARY_RESERVED_WIDTH) - 2 * columnGap`. When they
   are wider, they shift left only as far as needed and never cover the summary. The grid does
   this without measuring: the row has no column gap, the right cell has a 16px left padding and
@@ -275,12 +274,11 @@ browser, and approved moving the two room switches to the header's right side.
 ### Client
 
 - `QueueControls.tsx` adds a "Type" `Select multiple` after Board (`minWidth` 110 at `xs` and
-  140 from `sm` like Project and Board, `maxWidth` 220), with `displayEmpty` (MUI then notches the outline) and a shrunk label. `renderValue` shows "All
+  140 from `sm` like Project and Board), with `displayEmpty` (MUI then notches the outline) and a shrunk label. `renderValue` shows "All
   types" for an empty selection, the name for one type, and "N types" for two or more; the
   full list stays in the menu and in the select's `title` attribute (PR follow-up,
   11/05/2026: the joined names, with long Project and Board names, ran toward the centered
-  title between `lg` and `xl`). Project, Board and Type share `maxWidth` 220 below `lg`, 160
-  from `lg` and 220 from `xl`, truncated with an ellipsis by the select's own styles. Each `MenuItem` holds a `Checkbox` and the type name. The
+  title between `lg` and `xl`). Project, Board and Type share `maxWidth { xs: 220, lg: 160, xl: 220 }`, truncated with an ellipsis by the select's own styles. Each `MenuItem` holds a `Checkbox` and the type name. The
   menu edits a local draft while open (controlled `open`, the draft starts from
   `settings.issueTypes`), and closing it calls `onChangeSettings({ issueTypes: draft })` once,
   only when the draft differs as a set. Sending on every click lost clicks that landed before
