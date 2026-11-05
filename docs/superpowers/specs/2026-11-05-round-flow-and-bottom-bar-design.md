@@ -263,8 +263,11 @@ browser, and approved moving the two room switches to the header's right side.
 
 - `QueueControls.tsx` adds a "Type" `Select multiple` after Board (`minWidth` 110 at `xs` and
   140 from `sm` like Project and Board, `maxWidth` 220), with `displayEmpty` (MUI then notches the outline) and a shrunk label. `renderValue` shows "All
-  types" for an empty selection, otherwise the names joined with ", ", truncated with an
-  ellipsis by the select's own styles. Each `MenuItem` holds a `Checkbox` and the type name. The
+  types" for an empty selection, the name for one type, and "N types" for two or more; the
+  full list stays in the menu and in the select's `title` attribute (PR follow-up,
+  11/05/2026: the joined names, with long Project and Board names, ran toward the centered
+  title between `lg` and `xl`). Project, Board and Type share `maxWidth` 220 below `lg`, 160
+  from `lg` and 220 from `xl`, truncated with an ellipsis by the select's own styles. Each `MenuItem` holds a `Checkbox` and the type name. The
   menu edits a local draft while open (controlled `open`, the draft starts from
   `settings.issueTypes`), and closing it calls `onChangeSettings({ issueTypes: draft })` once,
   only when the draft differs as a set. Sending on every click lost clicks that landed before

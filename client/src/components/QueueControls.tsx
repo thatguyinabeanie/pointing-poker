@@ -28,9 +28,25 @@ interface Props {
 // header and clips it. Trimming the vertical padding gives a 32px control with room for the label.
 const SELECT_SX = { "& .MuiSelect-select": { py: 0.5 } };
 
+// Shared by Project, Board and Type. At lg the header's left column is about 500px at a 1200px
+// layout, and three selects growing to 220px with a long project or board name or a list of
+// types pushed toward the centered title, so they stop at 160px until xl. The select's own
+// nowrap and ellipsis styles truncate a longer value; its title attribute has the full text.
+const SELECT_FORM_SX = {
+  minWidth: { xs: 110, sm: 140 },
+  maxWidth: { xs: 220, lg: 160, xl: 220 },
+} as const;
+
 // An empty selection means all types, so the closed select says so instead of looking blank.
-// The select's own nowrap and ellipsis styles truncate a long list at the control's maxWidth.
+// Two or more show a count: the joined names ("Story, Bug") were the widest value in the header.
+// The full list stays in the menu and in the select's title attribute (typesTitle).
 function renderTypes(selected: string[]): string {
+  if (selected.length === 0) return "All types";
+  if (selected.length === 1) return selected[0];
+  return `${selected.length} types`;
+}
+
+function typesTitle(selected: string[]): string {
   return selected.length === 0 ? "All types" : selected.join(", ");
 }
 
@@ -53,6 +69,9 @@ export function QueueControls({
     ? (settings.projectKey ?? "")
     : "";
   const boardValue = boards.some((b) => b.id === settings.boardId) ? (settings.boardId ?? "") : "";
+  // Full names for the title attribute, since the closed selects truncate at their maxWidth.
+  const selectedProject = projects.find((p) => p.key === projectValue);
+  const boardTitle = boards.find((b) => b.id === boardValue)?.name;
 
   const onProjectChange = useCallback(
     (e: SelectChangeEvent<string>) => onChangeSettings({ projectKey: e.target.value || null }),
@@ -124,16 +143,13 @@ export function QueueControls({
         rowGap: 2,
       }}
     >
-      <FormControl
-        size="small"
-        sx={{ minWidth: { xs: 110, sm: 140 }, maxWidth: 220 }}
-        disabled={disabled}
-      >
+      <FormControl size="small" sx={SELECT_FORM_SX} disabled={disabled}>
         <InputLabel id={projectLabelId}>Project</InputLabel>
         <Select
           sx={SELECT_SX}
           labelId={projectLabelId}
           label="Project"
+          title={selectedProject ? `${selectedProject.key} (${selectedProject.name})` : undefined}
           value={projectValue}
           onChange={onProjectChange}
         >
@@ -144,16 +160,13 @@ export function QueueControls({
           ))}
         </Select>
       </FormControl>
-      <FormControl
-        size="small"
-        sx={{ minWidth: { xs: 110, sm: 140 }, maxWidth: 220 }}
-        disabled={disabled || boards.length === 0}
-      >
+      <FormControl size="small" sx={SELECT_FORM_SX} disabled={disabled || boards.length === 0}>
         <InputLabel id={boardLabelId}>Board</InputLabel>
         <Select<number | "">
           sx={SELECT_SX}
           labelId={boardLabelId}
           label="Board"
+          title={boardTitle}
           value={boardValue}
           onChange={onBoardChange}
         >
@@ -168,11 +181,7 @@ export function QueueControls({
       {/* Closed, the value is the room's stored selection, not filtered to the menu: it is what
           the server filters the queue by, so the closed select must show exactly that. Open, it
           is the local draft (see onTypesClose). */}
-      <FormControl
-        size="small"
-        sx={{ minWidth: { xs: 110, sm: 140 }, maxWidth: 220 }}
-        disabled={typesDisabled}
-      >
+      <FormControl size="small" sx={SELECT_FORM_SX} disabled={typesDisabled}>
         {/* displayEmpty shows "All types" with an empty value. MUI notches the outline for
             displayEmpty but does not shrink the label, which would then sit on the text. */}
         <InputLabel id={typeLabelId} shrink>
@@ -190,6 +199,7 @@ export function QueueControls({
           onClose={onTypesClose}
           onChange={onTypesChange}
           renderValue={renderTypes}
+          title={typesTitle(typesValue)}
         >
           {issueTypes.map((name) => (
             <MenuItem key={name} value={name} dense>
