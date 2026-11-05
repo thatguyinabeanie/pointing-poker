@@ -1,7 +1,12 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import { z } from "zod";
-import { expandBareIssueNumber, ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
+import {
+  expandBareIssueNumber,
+  ISSUE_KEY,
+  MIN_QUERY_LENGTH,
+  sameNames,
+} from "../shared/constants.ts";
 import { DECK } from "../shared/deck.ts";
 import type { QueueSection, QueueSettings, ServerMessage, Ticket } from "../shared/protocol.ts";
 import { env } from "./env.ts";
@@ -290,8 +295,14 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       app.log.warn({ reason: res.reason, projectKey }, "issue types fetch failed");
       return;
     }
+    const selectedBefore = state.queueSettings.issueTypes;
     applyState(game.setIssueTypes(state, res.value));
     broadcast();
+    // setIssueTypes drops selected types that Jira renamed or deleted. The queue was fetched with
+    // the old selection, so refetch it, as a Type filter change does. Awaited rather than handed
+    // to runAsync, which is per socket: this helper is room-level, and every caller already
+    // handles a throw (runAsync for commands, onThrow at bootstrap).
+    if (!sameNames(selectedBefore, state.queueSettings.issueTypes)) await fetchQueue();
   }
 
   // Resolves JIRA_DEFAULT_BOARD (numeric id or board name) against the default project's boards

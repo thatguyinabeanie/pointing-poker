@@ -355,8 +355,21 @@ export function setBoards(state: GameState, boards: JiraBoard[]): Result {
   return ok({ ...state, boards });
 }
 
+// Also drops selected names that are no longer in the list: a type renamed or deleted in Jira
+// would otherwise stay in the selection, and Jira answers 400 to the queue's `issuetype in (...)`
+// for every fetch after that. An empty list keeps the selection, because an empty answer must not
+// wipe the room's filter (a failed fetch never reaches here at all).
 export function setIssueTypes(state: GameState, types: string[]): Result {
-  return ok({ ...state, issueTypes: types });
+  if (types.length === 0) return ok({ ...state, issueTypes: types });
+  const known = new Set(types);
+  const selected = state.queueSettings.issueTypes;
+  const kept = selected.filter((name) => known.has(name));
+  // Keeps the settings object (and the selection's click order) when nothing was dropped.
+  const queueSettings =
+    kept.length === selected.length
+      ? state.queueSettings
+      : { ...state.queueSettings, issueTypes: kept };
+  return ok({ ...state, issueTypes: types, queueSettings });
 }
 
 export function markSave(state: GameState, save: JiraSave): Result {

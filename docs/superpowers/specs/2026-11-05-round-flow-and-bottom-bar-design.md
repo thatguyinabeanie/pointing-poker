@@ -222,7 +222,9 @@ browser, and approved moving the two room switches to the header's right side.
 - `QueueSettings.issueTypes: string[]`. Empty means all types. `createInitialState` sets `[]`.
 - `GameState.issueTypes: string[]` is the project's type names for the menu (not the
   selection). It defaults to `[]`, is set by `setIssueTypes(state, types)`, and is sent as
-  `Snapshot.issueTypes` by `viewFor`.
+  `Snapshot.issueTypes` by `viewFor`. `setIssueTypes` also drops selected names that are not in
+  `types`, so a type renamed or deleted in Jira cannot stay in the selection and fail every
+  queue fetch with a 400. An empty `types` keeps the selection (PR review, 11/05/2026).
 - `setQueueSettings` accepts `issueTypes` in the partial. It keeps only names that are in
   `state.issueTypes`, without repeats, because Jira answers 400 to `issuetype in (...)` with an
   unknown name. A selection with the same names in another order is not a change.
@@ -249,7 +251,10 @@ browser, and approved moving the two room switches to the header's right side.
   applied with `setIssueTypes` and broadcast.
 - A failed fetch logs one warn line and leaves the list as it was (empty after a project
   change). The menu is then disabled and the queue unfiltered. The user gets no error.
-- Any effective `issueTypes` change refetches the queue, like a board change.
+- Any effective `issueTypes` change refetches the queue, like a board change. That includes a
+  change made by `setIssueTypes` when the refreshed list no longer has a selected name: the
+  helper compares the selection before and after with `sameNames` and then awaits
+  `fetchQueue()`.
 
 ### Client
 
