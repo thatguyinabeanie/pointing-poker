@@ -64,7 +64,7 @@ export function App() {
   );
 
   const disabled = !connected;
-  // The server shows a player their own vote before reveal, so this works while voting.
+  // The server shows a player their own vote before reveal, so this works while voting and after the reveal.
   const selected = snapshot?.players.find((p) => p.userId === me?.userId)?.vote ?? null;
 
   const onChangeSettings = useCallback(
@@ -180,7 +180,7 @@ export function App() {
             <Deck
               deck={DECK}
               selected={selected}
-              disabled={disabled || snapshot.phase !== "voting"}
+              disabled={disabled || snapshot.phase === "idle"}
               onSelect={onSelect}
               onClear={onClear}
             />

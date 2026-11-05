@@ -60,11 +60,12 @@ export function ActionBar({
   const labelId = useId();
   const [points, setPoints] = useState<string>("");
   const ticketKey = ticket?.key ?? null;
+  const suggestion = suggestPoints(stats, deck);
 
   // Re-suggest on a new reveal, ticket or round, so a new reveal never keeps a stale pick. The
   // one exception is a refresh mid-reveal: a manual pick stored for this exact ticket and round
   // is restored. Any other stored pick is stale and is dropped.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deck is stable; stats is omitted so a manual pick survives later snapshots
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deck is stable; stats is omitted (a new object every snapshot), but suggestion is in the list so a vote change after the reveal re-suggests, and a stored manual pick still wins
   useEffect(() => {
     const stored = readPick();
     if (
@@ -79,8 +80,8 @@ export function ActionBar({
       return;
     }
     removeItem("session", PICK_KEY);
-    setPoints(suggestPoints(stats, deck) ?? "");
-  }, [phase, ticketKey, round]);
+    setPoints(suggestion ?? "");
+  }, [phase, ticketKey, round, suggestion]);
 
   const saving = jiraSave.status === "saving";
   const canSave = phase === "revealed" && ticket !== null && points !== "" && !saving;

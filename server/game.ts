@@ -139,19 +139,16 @@ export function vote(
   card: string,
   now: string = new Date().toISOString(),
 ): Result {
-  if (state.phase !== "voting") return fail("not_voting");
+  if (state.phase !== "voting" && state.phase !== "revealed") return fail("not_voting");
   if (!isCard(card)) return fail("invalid_card");
   const player = state.players.get(userId);
   if (!player) return fail("unknown_player");
-  return ok(
-    autoRevealIfReady(
-      withPlayers(state, (players) => {
-        // Clicking the selected card again withdraws it, so there is no separate "clear" command.
-        players.set(userId, { ...player, vote: player.vote === card ? null : card });
-      }),
-      now,
-    ),
-  );
+  const next = withPlayers(state, (players) => {
+    // Clicking the selected card again withdraws it, so there is no separate "clear" command.
+    players.set(userId, { ...player, vote: player.vote === card ? null : card });
+  });
+  // After the reveal a vote change updates the history row in place; before it, auto-reveal may fire.
+  return ok(next.phase === "revealed" ? refreshRevealedRow(next) : autoRevealIfReady(next, now));
 }
 
 // Flips the cards once every connected player holds a vote. Disconnected players are left out
@@ -185,6 +182,29 @@ export function reveal(state: GameState, now: string = new Date().toISOString())
 }
 
 const MAX_HISTORY = 50;
+
+// A vote changed after the reveal: recompute the stats on the existing row, same position. This
+// does not use recordReveal because that marks any existing row as re-voted and moves it to the
+// top, and a changed vote is the same reveal, not a new round. With no votes left the row keeps
+// its last stats (summarize would give nulls) rather than going blank.
+export function refreshRevealedRow(state: GameState): GameState {
+  const { ticket } = state;
+  if (ticket === null) return state;
+  const index = state.history.findIndex((row) => row.key === ticket.key);
+  const voters = [...state.players.values()].filter((p) => p.vote !== null).length;
+  if (index === -1 || voters === 0) return state;
+  const stats = summarize(state.players.values());
+  const history = [...state.history];
+  history[index] = {
+    ...history[index],
+    average: stats.average,
+    min: stats.min,
+    max: stats.max,
+    consensus: stats.consensus,
+    voters,
+  };
+  return { ...state, history };
+}
 
 // One row per ticket key: a re-reveal replaces the row, keeps its saved points and moves it to
 // the top. The array is replaced, never mutated, because viewFor hands it out by reference.
