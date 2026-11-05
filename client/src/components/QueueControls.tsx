@@ -7,7 +7,8 @@ import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import { useCallback, useId } from "react";
+import { useCallback, useId, useState } from "react";
+import { sameNames } from "../../../shared/constants.ts";
 import type { JiraBoard, JiraProject, QueueSettings } from "../../../shared/protocol.ts";
 
 interface Props {
@@ -62,15 +63,27 @@ export function QueueControls({
       onChangeSettings({ boardId: e.target.value === "" ? null : e.target.value }),
     [onChangeSettings],
   );
-  const onTypesChange = useCallback(
-    (e: SelectChangeEvent<string[]>) => {
-      const { value } = e.target;
-      // MUI types a multiple select's value as string | string[]; the string form only comes
-      // from browser autofill, as a comma-joined list.
-      onChangeSettings({ issueTypes: typeof value === "string" ? value.split(",") : value });
-    },
-    [onChangeSettings],
-  );
+  // The Type menu edits a local draft and sends it once, on close. Sending on every click made
+  // each click a room-wide queue refetch, and a click landing before the previous snapshot came
+  // back was computed from the stale selection and undid the earlier click.
+  const [typesOpen, setTypesOpen] = useState(false);
+  const [typesDraft, setTypesDraft] = useState<string[]>([]);
+  const typesValue = typesOpen ? typesDraft : settings.issueTypes;
+  const onTypesOpen = useCallback(() => {
+    setTypesDraft(settings.issueTypes);
+    setTypesOpen(true);
+  }, [settings.issueTypes]);
+  const onTypesChange = useCallback((e: SelectChangeEvent<string[]>) => {
+    const { value } = e.target;
+    // MUI types a multiple select's value as string | string[]; the string form only comes
+    // from browser autofill, as a comma-joined list.
+    setTypesDraft(typeof value === "string" ? value.split(",") : value);
+  }, []);
+  const onTypesClose = useCallback(() => {
+    setTypesOpen(false);
+    // Opening and closing without a net change sends nothing, so the room does not refetch.
+    if (!sameNames(typesDraft, settings.issueTypes)) onChangeSettings({ issueTypes: typesDraft });
+  }, [typesDraft, settings.issueTypes, onChangeSettings]);
 
   // Single row, no wrap: the header is a fixed 48px tall, so a second line would be clipped.
   return (
@@ -116,8 +129,9 @@ export function QueueControls({
           ))}
         </Select>
       </FormControl>
-      {/* The value is the room's stored selection, not filtered to the menu: it is what the
-          server filters the queue by, so the closed select must show exactly that. */}
+      {/* Closed, the value is the room's stored selection, not filtered to the menu: it is what
+          the server filters the queue by, so the closed select must show exactly that. Open, it
+          is the local draft (see onTypesClose). */}
       <FormControl
         size="small"
         sx={{ minWidth: 140, maxWidth: 220 }}
@@ -134,13 +148,16 @@ export function QueueControls({
           label="Type"
           multiple
           displayEmpty
-          value={settings.issueTypes}
+          value={typesValue}
+          open={typesOpen}
+          onOpen={onTypesOpen}
+          onClose={onTypesClose}
           onChange={onTypesChange}
           renderValue={renderTypes}
         >
           {issueTypes.map((name) => (
             <MenuItem key={name} value={name} dense>
-              <Checkbox size="small" checked={settings.issueTypes.includes(name)} sx={{ p: 0.5 }} />
+              <Checkbox size="small" checked={typesValue.includes(name)} sx={{ p: 0.5 }} />
               <ListItemText primary={name} />
             </MenuItem>
           ))}

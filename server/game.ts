@@ -1,3 +1,4 @@
+import { sameNames } from "../shared/constants.ts";
 import { DECK, isNumericCard } from "../shared/deck.ts";
 import type {
   Card,
@@ -325,14 +326,6 @@ export function setQueueSettings(state: GameState, partial: Partial<QueueSetting
     issueTypes: projectChanged ? [] : state.issueTypes,
     queue: { ...state.queue, loading: true },
   });
-}
-
-// Order-insensitive: the menu sends names in click order, and the JQL `in (...)` ignores order,
-// so a reordered selection is not a change and must not refetch the queue.
-function sameNames(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const set = new Set(b);
-  return a.every((name) => set.has(name));
 }
 
 export function setQueueLoading(state: GameState): Result {
