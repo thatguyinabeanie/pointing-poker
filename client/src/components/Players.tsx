@@ -160,8 +160,12 @@ export function Players({ players, phase, meId, stats }: Props) {
           alignSelf: "stretch",
           minWidth: 0,
           maxWidth: "100%",
-          flexWrap: "nowrap",
-          overflow: "hidden",
+          // Below lg the bar's height is auto, so the pills wrap onto more lines instead of
+          // being clipped: compact mode only drops the names, and non-shrinking pills can still
+          // be wider than a phone, which hid the trailing players and their votes. Only the
+          // fixed-height row at lg clips.
+          flexWrap: { xs: "wrap", lg: "nowrap" },
+          overflow: { lg: "hidden" },
         }}
       >
         {pills(compact)}

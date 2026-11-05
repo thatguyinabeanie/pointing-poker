@@ -162,7 +162,9 @@ covers the stacked layout below `lg` and font differences.
 
 - **Center: player pills.** The row uses the deck row's `1fr auto 1fr` grid at `lg`: an empty
   left cell, the pills in the center column so they sit centered over the deck, and the summary
-  in the right cell. Below `lg` the pills and the summary stack, centered. (Changed at the user's
+  in the right cell. Below `lg` the pills and the summary stack, centered, and both wrap onto
+  more lines instead of clipping or scrolling the page (PR review, 11/05/2026); only the
+  fixed-height row at `lg` clips the pills. (Changed at the user's
   request on 11/05/2026; the first version had the pills left-aligned.) Each pill holds the
   avatar, the short name and a mini card. The card is a back while voted, a dashed outline while
   not voted, and the face-up value after the reveal, with outliers in the warning color, as

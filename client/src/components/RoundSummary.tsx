@@ -41,12 +41,22 @@ export function RoundSummary({ phase, stats, votedCount, connectedCount }: Props
     <Chip size="small" variant="outlined" label="No numeric votes" />
   );
 
+  // Below lg the summary has its own line and the bar's height is auto, so the chart, the Avg
+  // and Median text and the chip wrap instead of pushing the page into a horizontal scroll at
+  // a 320px viewport. At lg it stays one row, sized to fit the fixed-height players row.
   return (
     <Stack
       direction="row"
       useFlexGap
       spacing={1.5}
-      sx={{ flexShrink: 0, alignItems: "center", whiteSpace: "nowrap" }}
+      sx={{
+        flexShrink: 0,
+        alignItems: "center",
+        justifyContent: "center",
+        flexWrap: { xs: "wrap", lg: "nowrap" },
+        rowGap: 0.5,
+        whiteSpace: "nowrap",
+      }}
     >
       <VoteChart counts={stats.counts} />
       <Typography variant="body2">
