@@ -95,16 +95,27 @@ export function QueueControls({
   const typesDisabled = disabled || issueTypes.length === 0;
   const [typesDraft, setTypesDraft] = useState<string[]>([]);
   const typesValue = typesOpen ? typesDraft : settings.issueTypes;
-  // The selection this client last sent, until the room's snapshot echoes it back. If the user
-  // closes the menu and reopens it before the echo arrives, settings.issueTypes is still the
-  // pre-edit selection, so using it as the baseline would make the echo look like someone else's
-  // change and silently drop the second edit. Reopening starts from lastSent instead, and the
-  // close check accepts either value as "unchanged".
+  // The selection this client last sent (lastSent) and the room's selection at that moment
+  // (sentFrom). If the user closes the menu and reopens it before the server answers,
+  // settings.issueTypes is still the pre-edit selection, so using it as the baseline would make
+  // the echo look like someone else's change and silently drop the second edit. Reopening starts
+  // from lastSent instead, and the close check accepts the room matching atOpen, lastSent or
+  // sentFrom as "nobody else changed anything".
+  // Both are cleared on ANY change of the room's selection after a send, not only when it equals
+  // lastSent: the server drops type names that are not in the project's list, so its answer can
+  // differ from what was sent, and a stale lastSent would then make every later close look like
+  // someone else's edit and drop the user's edits for good. A rejected send changes nothing, so
+  // the refs stay, and sentFrom keeps the unchanged room recognizable on the next close.
   const lastSent = useRef<string[] | null>(null);
+  const sentFrom = useRef<string[] | null>(null);
+  // The previous room selection, so the effect clears only on a real change: not on the first
+  // render and not on a re-render that carries an equal selection.
+  const prevRoomTypes = useRef(settings.issueTypes);
   useEffect(() => {
-    if (lastSent.current && sameNames(settings.issueTypes, lastSent.current)) {
-      lastSent.current = null;
-    }
+    if (sameNames(settings.issueTypes, prevRoomTypes.current)) return;
+    prevRoomTypes.current = settings.issueTypes;
+    lastSent.current = null;
+    sentFrom.current = null;
   }, [settings.issueTypes]);
   const onTypesOpen = useCallback(() => {
     const baseline = lastSent.current ?? settings.issueTypes;
@@ -123,13 +134,17 @@ export function QueueControls({
     // Opening and closing without a net change sends nothing, so the room does not refetch.
     // If the room's selection changed while the menu was open (another user's edit), the draft
     // was built on the old selection and sending it would undo that edit, so it is dropped.
-    // The room matching our own last send (lastSent) is not someone else's edit, so it counts
-    // as unchanged too.
+    // The room matching our own last send (lastSent) is not someone else's edit, and neither is
+    // the room still at the selection we sent from (sentFrom: the send was rejected or not yet
+    // applied), so those count as unchanged too.
+    const room = settings.issueTypes;
     const roomUnchanged =
-      sameNames(settings.issueTypes, typesSession.atOpen) ||
-      (lastSent.current !== null && sameNames(settings.issueTypes, lastSent.current));
+      sameNames(room, typesSession.atOpen) ||
+      (lastSent.current !== null && sameNames(room, lastSent.current)) ||
+      (sentFrom.current !== null && sameNames(room, sentFrom.current));
     if (!sameNames(typesDraft, typesSession.atOpen) && roomUnchanged) {
       lastSent.current = typesDraft;
+      sentFrom.current = room;
       onChangeSettings({ issueTypes: typesDraft });
     }
   }, [typesSession, typesDraft, settings.issueTypes, onChangeSettings]);
