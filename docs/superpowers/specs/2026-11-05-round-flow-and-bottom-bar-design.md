@@ -174,21 +174,32 @@ covers the stacked layout below `lg` and font differences.
   not voted, and the face-up value after the reveal, with outliers in the warning color, as
   today. The viewer's own pill has a bold name and the avatar ring, as today. Offline players
   stay dimmed.
-- **Compact mode:** a hidden copy of the full pills (names always shown) is measured against the
-  width the center column can take while staying centered: at `lg`,
-  `rowWidth - 2 * Math.max(summaryWidth, SUMMARY_RESERVED_WIDTH) - 2 * columnGap`, and below
-  `lg` the row width. The summary is counted on both sides so the pills stay centered on the
-  deck instead of drifting left (the user's request on 11/05/2026). `SUMMARY_RESERVED_WIDTH`
-  (370px) is a typical revealed summary (bars for 2, 3, 5, 8, 13, "Avg 6.2 · Median 5", a
-  "Spread 2–13" chip, measured at 366.9px and rounded up to the next 10px; it was 400px before
-  the PR follow-up on 11/05/2026). Measured on 11/05/2026 at a 1440px layout (row 1368px): 7 players with typical first names (Sarah, Michael, Jessica, David, Emily, James, Maria) need 774px against 596px available, so they are compact in both phases; about 5 such pills fit at 1440, and 7 keep their names from a 1620px layout (row 1548px, 776px available). It makes compact mode the same in both
-  phases (the user's decision on 11/05/2026, after 7 players at 1440px showed names while
-  voting and dropped them at the reveal): a team that fits keeps its names in both phases, and
-  a team that does not is compact in both. The hidden copy sits in an absolutely positioned,
-  clipped box (`inset: 0`, `overflow: hidden`, `pointer-events: none`) so it never widens the
-  page. One `ResizeObserver` watches the row, the summary and the hidden copy. When they do not fit, every pill drops its name and shows only the avatar and
-  card. The full name goes in `title` and in the card's `aria-label`. All pills switch together,
-  so the row stays uniform. Compact mode is decided by measured width, not by a player count.
+- **Compact mode and position:** the summary is reserved on one side only (the user's
+  decision on 11/05/2026; reserving it on both sides kept only about 5 names at a 1440px
+  layout). A hidden copy of the full pills (names always shown) is measured against the room
+  left of the summary: at `lg`, `rowWidth - Math.max(summaryWidth, SUMMARY_RESERVED_WIDTH) -
+  columnGap`, and below `lg` the row width. When they do not fit, every pill drops its name and
+  shows only the avatar and card. The full name goes in `title` and in the card's `aria-label`.
+  All pills switch together, so the row stays uniform. Compact mode is decided by measured
+  width, not by a player count, and measuring the hidden copy means dropping the names cannot
+  flip the decision back.
+- **Position:** the pills, named or compact, stay exactly centered over the deck while they fit
+  in `rowWidth - 2 * Math.max(summaryWidth, SUMMARY_RESERVED_WIDTH) - 2 * columnGap`. When they
+  are wider, they shift left only as far as needed and never cover the summary. The grid does
+  this without measuring: the row has no column gap, the right cell has a 16px left padding and
+  wraps the summary in a box with `minWidth: SUMMARY_RESERVED_WIDTH` at `lg`, so the right `1fr`
+  column never shrinks below the reserve and the left column gives up the difference.
+- **Reserve:** `SUMMARY_RESERVED_WIDTH` (370px) is a typical revealed summary (bars for 2, 3, 5,
+  8, 13, "Avg 6.2 · Median 5", a "Spread 2–13" chip, measured at 366.9px and rounded up to the
+  next 10px; it was 400px before the PR follow-up on 11/05/2026). A wider real summary counts at
+  its real width. The reserve applies in every phase, so compact mode and the position are the
+  same while voting and after the reveal (the user's decision on 11/05/2026, after 7 players at
+  1440px showed names while voting and dropped them at the reveal). Measured on 11/05/2026 at a
+  1440px layout (row 1368px, 982px left of the reserve), the same in both phases: 5 typical
+  first names stay centered, 8 keep their names shifted 139px left and 21px clear of the
+  results, and 9 or more go compact. The hidden copy sits in an absolutely positioned, clipped
+  box (`inset: 0`, `overflow: hidden`, `pointer-events: none`) so it never widens the page. One
+  `ResizeObserver` watches the row, the reserve box and the hidden copy.
 - **Right, while voting:** "N of M voted" (connected players), as today.
 - **Right, after the reveal:**
   - A mini bar chart. There is one bar per voted card, in deck order. Height is proportional to

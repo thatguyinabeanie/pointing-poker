@@ -53,23 +53,31 @@ const PILL_LIST_SX = {
   py: 0,
 } as const;
 
-// The gap between the players row's three columns, in px, so the compact-mode math and the
-// rendered gap cannot disagree.
+// The space between the pills and the summary at lg, in px, so the compact-mode math and the
+// rendered space cannot disagree. It is the right cell's left padding, not a grid column gap:
+// a column gap would also sit between the empty left cell and the pills, so pills shifted all
+// the way left would still lose 16px at the row's left edge.
 const COLUMN_GAP = 16;
 
-// The summary width reserved on each side of the pills at lg, whatever the phase. While voting
-// the summary is a short "N of M voted", so measuring only the real summary let 7 players at
-// 1440px show names while voting and drop them at the reveal, when the chart widened it. The
-// user chose (11/05/2026) that compact mode must not depend on the phase. A typical revealed
-// summary (bars for 5 distinct cards 2, 3, 5, 8, 13, "Avg 6.2 · Median 5", a "Spread 2–13"
-// chip) measured 366.9px in Chrome at a 1440px layout (PR follow-up, 11/05/2026); this rounds
-// it up to the next 10px. A wider real summary still counts at its real width.
+// The summary width reserved at lg, whatever the phase. While voting the summary is a short
+// "N of M voted", so measuring only the real summary let 7 players at 1440px show names while
+// voting and drop them at the reveal, when the chart widened it. The user chose (11/05/2026)
+// that compact mode must not depend on the phase. A typical revealed summary (bars for 5
+// distinct cards 2, 3, 5, 8, 13, "Avg 6.2 · Median 5", a "Spread 2–13" chip) measured 366.9px
+// in Chrome at a 1440px layout (PR follow-up, 11/05/2026); this rounds it up to the next 10px.
+// It is the CSS min-width of the summary's box, so a wider real summary counts at its real
+// width, and the grid's right column can never get narrower than it.
 const SUMMARY_RESERVED_WIDTH = 370;
 
 // The players row, the top tier of the bottom bar. At lg it uses the deck row's 1fr auto 1fr
 // grid, so the pills sit centered over the deck, with the round summary (vote count or results)
 // in the right cell. A fixed height there, so the bar never grows. Below lg the pills and the
 // summary stack, centered.
+// The reserve is kept on the right only (the user's decision, 11/05/2026): reserving it on
+// both sides kept only about 5 names at a 1440px layout. Because the right 1fr column cannot
+// shrink below the reserve plus the gap, the grid itself keeps the pills exactly centered while
+// both 1fr columns can be that wide, and once they cannot, the left column gives up the
+// difference, so the pills shift left only as far as needed and never cover the summary.
 export function Players({ players, phase, meId, stats }: Props) {
   const revealed = phase === "revealed";
   const outliers = findOutliers(players, revealed);
@@ -87,10 +95,9 @@ export function Players({ players, phase, meId, stats }: Props) {
   // Compact mode measures the hidden copy, which always shows the names, and never the visible
   // list. Measuring the visible list would loop: dropping the names makes the pills fit, which
   // would bring the names back, which would make them overflow again.
-  // At lg the summary's width is counted on both sides of the center cell. The two 1fr columns
-  // are only equal while the pills leave room for a column as wide as the summary on the left,
-  // so this keeps the pills centered on the deck instead of drifting left as the row fills.
-  // The width is at least SUMMARY_RESERVED_WIDTH, so the answer is the same while voting and
+  // At lg the names fit while the pills fit left of the summary's reserve and the gap; the grid
+  // decides whether they sit centered or shifted left (see the component comment). The reserve
+  // box is at least SUMMARY_RESERVED_WIDTH wide, so the answer is the same while voting and
   // after the reveal.
   // Below lg the summary sits on its own line, so the pills get the whole row.
   // The row, the summary and the hidden copy are all observed, so a reveal (wider summary), a
@@ -102,10 +109,10 @@ export function Players({ players, phase, meId, stats }: Props) {
     const measure = measureRef.current;
     if (!row || !summary || !measure) return;
     const check = () => {
+      // getBoundingClientRect, not offsetWidth: a fractional summary width rounded down could
+      // let the names through by a fraction of a pixel and clip the last pill.
       const available = isLg
-        ? row.clientWidth -
-          2 * Math.max(summary.getBoundingClientRect().width, SUMMARY_RESERVED_WIDTH) -
-          2 * COLUMN_GAP
+        ? row.clientWidth - summary.getBoundingClientRect().width - COLUMN_GAP
         : row.clientWidth;
       setCompact(measure.scrollWidth > available);
     };
@@ -138,7 +145,6 @@ export function Players({ players, phase, meId, stats }: Props) {
         gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
         justifyItems: { xs: "center", lg: "stretch" },
         alignItems: "center",
-        columnGap: `${COLUMN_GAP}px`,
         rowGap: 0.5,
         height: { lg: 44 },
         minHeight: 44,
@@ -171,13 +177,33 @@ export function Players({ players, phase, meId, stats }: Props) {
       >
         {pills(compact)}
       </Box>
-      <Box ref={summaryRef} sx={{ justifySelf: { lg: "end" } }}>
-        <RoundSummary
-          phase={phase}
-          stats={stats}
-          votedCount={votedCount}
-          connectedCount={connected.length}
-        />
+      {/* The cell keeps its automatic min-width, so the 1fr column's minimum is its content:
+          the gap plus the reserve box. The reserve box is at least SUMMARY_RESERVED_WIDTH wide
+          at lg and grows with a wider summary, which stays at the right edge. Both are blocks
+          below lg: as flex containers they kept the summary (flexShrink 0) from wrapping, and
+          it scrolled a 360px page sideways. */}
+      <Box
+        sx={{
+          display: { xs: "block", lg: "flex" },
+          justifyContent: { lg: "flex-end" },
+          pl: { lg: `${COLUMN_GAP}px` },
+        }}
+      >
+        <Box
+          ref={summaryRef}
+          sx={{
+            display: { xs: "block", lg: "flex" },
+            justifyContent: { lg: "flex-end" },
+            minWidth: { lg: SUMMARY_RESERVED_WIDTH },
+          }}
+        >
+          <RoundSummary
+            phase={phase}
+            stats={stats}
+            votedCount={votedCount}
+            connectedCount={connected.length}
+          />
+        </Box>
       </Box>
       {/* The clipping box keeps the max-content copy from widening the page: on its own, a
           copy wider than the window (12 or more players) added a horizontal scrollbar. */}
