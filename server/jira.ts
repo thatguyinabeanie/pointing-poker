@@ -177,6 +177,11 @@ function luceneSafe(value: string): string {
     .trim();
 }
 
+interface RawParent {
+  key?: unknown;
+  fields?: { summary?: unknown; issuetype?: { name?: unknown; hierarchyLevel?: unknown } };
+}
+
 interface RawComment {
   id?: unknown;
   author?: { displayName?: unknown } | null;
@@ -309,12 +314,16 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
   }
 
   async function discoverFieldId(): Promise<Result<string>> {
-    const fields = await listFields();
+    const listed = listFields();
+    const fields = await listed;
     if (!fields.ok) return fields;
     const id =
       customFieldId(fields.value, "Story Points") ??
       customFieldId(fields.value, "Story point estimate");
     if (id) return { ok: true, value: id };
+    // Evict like any other failure so a Story Points field added later is found on the next
+    // call. The identity check keeps a newer in-flight list from being dropped.
+    if (cachedFields === listed) cachedFields = null;
     return fail(
       "no_points_field",
       'No custom field named "Story Points" or "Story point estimate".',
@@ -867,15 +876,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
 
   // Only an epic-level parent counts: a sub-task's parent is a story, not an epic.
   // hierarchyLevel 1 is Jira's epic level; the type name is the fallback when it is missing.
-  function parseEpic(
-    parent:
-      | {
-          key?: unknown;
-          fields?: { summary?: unknown; issuetype?: { name?: unknown; hierarchyLevel?: unknown } };
-        }
-      | null
-      | undefined,
-  ): QueueEpic | null {
+  function parseEpic(parent: RawParent | null | undefined): QueueEpic | null {
     if (typeof parent?.key !== "string") return null;
     const type = parent.fields?.issuetype;
     const level = type?.hierarchyLevel;
@@ -897,13 +898,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         summary?: unknown;
         issuetype?: { name?: unknown };
         status?: { name?: unknown };
-        parent?: {
-          key?: unknown;
-          fields?: {
-            summary?: unknown;
-            issuetype?: { name?: unknown; hierarchyLevel?: unknown };
-          };
-        };
+        parent?: RawParent;
       };
     }[]) {
       if (typeof issue.key !== "string") continue;
@@ -941,6 +936,8 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
 
       for (let i = 0; i < keys.length; i += EPIC_COLOR_CHUNK) {
         const chunk = keys.slice(i, i + EPIC_COLOR_CHUNK);
+        // One stale or inaccessible key makes Jira reject the whole `key in (...)` chunk, so
+        // that chunk's epics stay gray. Non-fatal, by design.
         const res = await request("POST", "/rest/api/3/search/jql", {
           jql: `key in (${chunk.map(jqlQuote).join(", ")})`,
           fields: wanted,
@@ -992,24 +989,31 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return null;
   }
 
-  // Returns copies with epic colors filled in; the inputs are not mutated.
+  // Copies the items, setting epic.color from the map; the inputs are not mutated.
+  function applyEpicColors(items: QueueItem[], colors: Map<string, EpicColor>): QueueItem[] {
+    return items.map((item) => {
+      const color = item.epic ? colors.get(item.epic.key) : undefined;
+      return item.epic && color ? { ...item, epic: { ...item.epic, color } } : item;
+    });
+  }
+
+  async function colorsFor(lists: QueueItem[][]): Promise<Map<string, EpicColor>> {
+    const keys = new Set<string>();
+    for (const items of lists) {
+      for (const item of items) if (item.epic) keys.add(item.epic.key);
+    }
+    return epicColors([...keys]);
+  }
+
   async function colorItems(items: QueueItem[]): Promise<QueueItem[]> {
-    return (await withEpicColors([{ items }]))[0]?.items ?? items;
+    return applyEpicColors(items, await colorsFor([items]));
   }
 
   async function withEpicColors<T extends { items: QueueItem[] }>(sections: T[]): Promise<T[]> {
-    const keys = new Set<string>();
-    for (const section of sections) {
-      for (const item of section.items) if (item.epic) keys.add(item.epic.key);
-    }
-    const colors = await epicColors([...keys]);
-    if (colors.size === 0) return sections;
+    const colors = await colorsFor(sections.map((section) => section.items));
     return sections.map((section) => ({
       ...section,
-      items: section.items.map((item) => {
-        const color = item.epic ? colors.get(item.epic.key) : undefined;
-        return item.epic && color ? { ...item, epic: { ...item.epic, color } } : item;
-      }),
+      items: applyEpicColors(section.items, colors),
     }));
   }
 
