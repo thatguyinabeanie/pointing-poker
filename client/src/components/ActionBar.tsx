@@ -6,7 +6,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import type { SxProps, Theme } from "@mui/material/styles";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { isNumericCard } from "../../../shared/deck.ts";
 import type { JiraSave, Phase, Snapshot, Ticket } from "../../../shared/protocol.ts";
 import { suggestPoints } from "../lib/estimate.ts";
@@ -69,24 +69,35 @@ export function ActionBar({
   const [points, setPoints] = useState<string>("");
   const ticketKey = ticket?.key ?? null;
   const suggestion = suggestPoints(stats, deck);
+  // The manual pick for this ticket and round, kept in memory as well as in sessionStorage.
+  // writeJson ignores failures, so with storage blocked or full the stored copy can be missing,
+  // and the next changed suggestion would then silently replace the user's pick.
+  const manualPick = useRef<StoredPick | null>(null);
 
-  // Re-suggest on a new reveal, ticket or round, so a new reveal never keeps a stale pick. The
-  // one exception is a refresh mid-reveal: a manual pick stored for this exact ticket and round
-  // is restored. Any other stored pick is stale and is dropped.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deck is stable; stats is omitted (a new object every snapshot), but suggestion is in the list so a vote change after the reveal re-suggests, and a stored manual pick still wins
+  // Re-suggest on a new reveal, ticket or round, so a new reveal never keeps a stale pick. A
+  // manual pick for this exact ticket and round wins over the suggestion: the in-memory one
+  // first, then the stored one, which is what survives a refresh mid-reveal. Any other pick is
+  // stale and is dropped from both places.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deck is stable; stats is omitted (a new object every snapshot), but suggestion is in the list so a vote change after the reveal re-suggests, and a manual pick (in memory, or stored for a refresh) still wins
   useEffect(() => {
-    const stored = readPick();
-    if (
-      stored !== null &&
+    const isCurrent = (pick: StoredPick | null): pick is StoredPick =>
+      pick !== null &&
       phase === "revealed" &&
-      stored.ticketKey === ticketKey &&
-      stored.round === round &&
-      deck.includes(stored.points) &&
-      isNumericCard(stored.points)
-    ) {
+      pick.ticketKey === ticketKey &&
+      pick.round === round &&
+      deck.includes(pick.points) &&
+      isNumericCard(pick.points);
+    if (isCurrent(manualPick.current)) {
+      setPoints(manualPick.current.points);
+      return;
+    }
+    const stored = readPick();
+    if (isCurrent(stored)) {
+      manualPick.current = stored;
       setPoints(stored.points);
       return;
     }
+    manualPick.current = null;
     removeItem("session", PICK_KEY);
     setPoints(suggestion ?? "");
   }, [phase, ticketKey, round, suggestion]);
@@ -104,7 +115,9 @@ export function ActionBar({
     (e: { target: { value: string } }) => {
       setPoints(e.target.value);
       if (ticketKey !== null) {
-        writeJson("session", PICK_KEY, { ticketKey, round, points: e.target.value });
+        const pick = { ticketKey, round, points: e.target.value };
+        manualPick.current = pick;
+        writeJson("session", PICK_KEY, pick);
       }
     },
     [ticketKey, round],
