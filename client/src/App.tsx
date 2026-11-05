@@ -2,8 +2,6 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Container from "@mui/material/Container";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import Switch from "@mui/material/Switch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DECK } from "../../shared/deck.ts";
 import type { Card, ClientCommand, QueueSettings } from "../../shared/protocol.ts";
@@ -15,12 +13,9 @@ import { LeftPanel } from "./components/LeftPanel.tsx";
 import { type Notice, NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
+import { RoomSwitch } from "./components/RoomSwitch.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
-
-// mr 0 drops the label's default 16px right margin; the header's gap spaces the switches.
-// ml 0 replaces the default -11px, which would pull a switch into the item before it.
-const SWITCH_LABEL_SX = { ml: 0, mr: 0, flexShrink: 0, whiteSpace: "nowrap" } as const;
 
 export function App() {
   const { snapshot, me, connected, send, error, disconnectedReason, search, searchResults } =
@@ -93,21 +88,13 @@ export function App() {
     if (selected) dispatch({ type: "vote", card: selected });
   }, [dispatch, selected]);
   const onReveal = useCallback(() => dispatch({ type: "reveal" }), [dispatch]);
-  const onAutoRevealChange = useCallback(
+  const onAutoRevealToggle = useCallback(
     (enabled: boolean) => dispatch({ type: "setAutoReveal", enabled }),
     [dispatch],
   );
-  const onAutoRevealToggle = useCallback(
-    (e: { target: { checked: boolean } }) => onAutoRevealChange(e.target.checked),
-    [onAutoRevealChange],
-  );
-  const onAutoAdvanceChange = useCallback(
+  const onAutoAdvanceToggle = useCallback(
     (enabled: boolean) => dispatch({ type: "setAutoAdvance", enabled }),
     [dispatch],
-  );
-  const onAutoAdvanceToggle = useCallback(
-    (e: { target: { checked: boolean } }) => onAutoAdvanceChange(e.target.checked),
-    [onAutoAdvanceChange],
   );
   const onReset = useCallback(
     ({ clearTicket }: { clearTicket: boolean }) =>
@@ -244,29 +231,17 @@ export function App() {
             // ticket" onto a second row after reveal; on the left both switches crowded the
             // Project, Board and Type selects, so they sit on the right (decision 50).
             <>
-              <FormControlLabel
+              <RoomSwitch
                 label="Auto-reveal"
+                checked={snapshot.autoReveal}
                 disabled={disabled}
-                sx={SWITCH_LABEL_SX}
-                control={
-                  <Switch
-                    size="small"
-                    checked={snapshot.autoReveal}
-                    onChange={onAutoRevealToggle}
-                  />
-                }
+                onToggle={onAutoRevealToggle}
               />
-              <FormControlLabel
+              <RoomSwitch
                 label="Auto-advance"
+                checked={snapshot.autoAdvance}
                 disabled={disabled}
-                sx={SWITCH_LABEL_SX}
-                control={
-                  <Switch
-                    size="small"
-                    checked={snapshot.autoAdvance}
-                    onChange={onAutoAdvanceToggle}
-                  />
-                }
+                onToggle={onAutoAdvanceToggle}
               />
             </>
           ) : undefined

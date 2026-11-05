@@ -85,9 +85,22 @@ export function QueueControls({
     if (!sameNames(typesDraft, settings.issueTypes)) onChangeSettings({ issueTypes: typesDraft });
   }, [typesDraft, settings.issueTypes, onChangeSettings]);
 
-  // Single row, no wrap: the header is a fixed 48px tall, so a second line would be clipped.
+  // One row from lg, where the header is a fixed 48px tall and a second line would be clipped.
+  // Below lg the header grows, and at phone width the three selects (110px each) and Refresh do
+  // not fit one line, so they wrap. useFlexGap keeps the spacing right on wrapped lines.
   return (
-    <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
+    <Stack
+      direction="row"
+      spacing={1}
+      useFlexGap
+      sx={{
+        alignItems: "center",
+        minWidth: 0,
+        flexWrap: { xs: "wrap", lg: "nowrap" },
+        // A wrapped line needs room above it for the next select's floating label.
+        rowGap: 2,
+      }}
+    >
       <FormControl
         size="small"
         sx={{ minWidth: { xs: 110, sm: 140 }, maxWidth: 220 }}
@@ -134,7 +147,7 @@ export function QueueControls({
           is the local draft (see onTypesClose). */}
       <FormControl
         size="small"
-        sx={{ minWidth: 140, maxWidth: 220 }}
+        sx={{ minWidth: { xs: 110, sm: 140 }, maxWidth: 220 }}
         disabled={disabled || issueTypes.length === 0}
       >
         {/* displayEmpty shows "All types" with an empty value. MUI notches the outline for
