@@ -1,9 +1,12 @@
+import Box from "@mui/material/Box";
 import Link from "@mui/material/Link";
 import ListItem from "@mui/material/ListItem";
 import ListItemButton from "@mui/material/ListItemButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { type MouseEvent, type ReactNode, useCallback } from "react";
+import type { QueueEpic } from "../../../shared/protocol.ts";
+import { epicHex } from "../lib/epicColors.ts";
 import { IssueTypeIcon } from "./IssueTypeIcon.tsx";
 
 interface Props {
@@ -14,6 +17,7 @@ interface Props {
   disabled: boolean;
   onPick: (key: string) => void;
   badge: ReactNode;
+  epic?: QueueEpic | null;
   secondLine: ReactNode;
 }
 
@@ -29,6 +33,7 @@ export function TicketRowFrame({
   disabled,
   onPick,
   badge,
+  epic,
   secondLine,
 }: Props) {
   const onClick = useCallback(() => onPick(ticketKey), [onPick, ticketKey]);
@@ -68,6 +73,39 @@ export function TicketRowFrame({
           >
             {ticketKey}
           </Link>
+          {epic ? (
+            // No click handler: a click loads the ticket like the rest of the row. minWidth 0
+            // plus maxWidth let a long name truncate so the key and the status badge stay visible.
+            <Stack
+              direction="row"
+              title={epic.name || epic.key}
+              sx={{
+                alignItems: "center",
+                gap: 0.5,
+                minWidth: 0,
+                maxWidth: "50%",
+                px: 0.75,
+                // An inset shadow draws the outline without adding border height, so a row with
+                // a chip stays as tall as one without (a real border made it 2px taller).
+                boxShadow: (theme) => `inset 0 0 0 1px ${theme.palette.divider}`,
+                borderRadius: 1,
+              }}
+            >
+              <Box
+                component="span"
+                sx={{
+                  flexShrink: 0,
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  bgcolor: epicHex(epic.color),
+                }}
+              />
+              <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
+                {epic.name || epic.key}
+              </Typography>
+            </Stack>
+          ) : null}
           <Typography
             component="span"
             variant="caption"

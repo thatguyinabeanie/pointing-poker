@@ -90,12 +90,36 @@ export interface QueueSettings {
   projectKey: string | null;
   boardId: number | null;
 }
+// The server maps Jira's raw color values into this fixed set, so the client never sees raw Jira values.
+export type EpicColor =
+  | "purple"
+  | "blue"
+  | "green"
+  | "teal"
+  | "yellow"
+  | "orange"
+  | "grey"
+  | "dark_purple"
+  | "dark_blue"
+  | "dark_green"
+  | "dark_teal"
+  | "dark_yellow"
+  | "dark_orange"
+  | "dark_grey";
+
+export interface QueueEpic {
+  key: string;
+  name: string; // the epic's summary
+  color: EpicColor | null; // null: Jira has no color, or the lookup failed
+}
+
 export interface QueueItem {
   key: string;
   summary: string;
   issueType: string;
   status: string;
   url: string;
+  epic: QueueEpic | null;
 }
 export interface JiraProject {
   key: string;
