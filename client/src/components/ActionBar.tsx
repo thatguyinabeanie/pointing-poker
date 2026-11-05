@@ -42,7 +42,7 @@ interface Props {
 const RESET_LABEL: Record<Phase, string> = {
   idle: "Start round",
   voting: "Reset",
-  revealed: "Next ticket",
+  revealed: "Next",
 };
 
 export function ActionBar({
@@ -110,9 +110,10 @@ export function ActionBar({
   );
 
   // One row, controls chosen by phase: voting shows Reveal and Reset; revealed shows the
-  // points select, Save and Next ticket; idle shows Start round. Stats live in Players.
-  // Wraps so the select and buttons stay on screen below lg, where the bar is
-  // not a wide grid cell.
+  // points select, Save and Next; idle shows Start round. Stats live in RoundSummary, in the
+  // players row above. The labels are short so the revealed controls fit one row beside the
+  // deck at laptop widths. Wraps so the select and buttons stay on screen below lg, where the
+  // bar is not a wide grid cell.
   return (
     <Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
       {phase === "voting" && (
@@ -122,9 +123,9 @@ export function ActionBar({
       )}
       {phase === "revealed" && (
         <>
-          <FormControl size="small" sx={{ minWidth: 140 }} disabled={disabled}>
-            <InputLabel id={labelId}>Story points</InputLabel>
-            <Select labelId={labelId} label="Story points" value={points} onChange={onPointsChange}>
+          <FormControl size="small" sx={{ minWidth: 96 }} disabled={disabled}>
+            <InputLabel id={labelId}>Points</InputLabel>
+            <Select labelId={labelId} label="Points" value={points} onChange={onPointsChange}>
               {numericDeck.map((card) => (
                 <MenuItem key={card} value={card}>
                   {card}
@@ -134,11 +135,13 @@ export function ActionBar({
           </FormControl>
           <Button
             variant="contained"
+            // The visible text is short to fit the bar; the accessible name keeps the target.
+            aria-label="Save to Jira"
             disabled={disabled || !canSave}
             onClick={onSaveClick}
             startIcon={saving ? <CircularProgress size={16} /> : undefined}
           >
-            Save to Jira
+            Save
           </Button>
         </>
       )}

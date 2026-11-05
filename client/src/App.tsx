@@ -167,44 +167,47 @@ export function App() {
         }
         main={<TicketView ticket={snapshot.ticket} />}
         bottom={
-          <Box
-            sx={{
-              display: "grid",
-              // The auto center column keeps the deck centered whatever width the sides take.
-              gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
-              gap: 2,
-              alignItems: "center",
-            }}
-          >
-            {/* minWidth 0 lets a long player list wrap here instead of pushing the deck off-center. */}
-            <Box sx={{ minWidth: 0 }}>
-              <Players
-                players={snapshot.players}
-                phase={snapshot.phase}
-                meId={me?.userId ?? null}
-                stats={snapshot.stats}
-              />
-            </Box>
-            <Deck
-              deck={DECK}
-              selected={selected}
-              disabled={disabled || snapshot.phase === "idle"}
-              onSelect={onSelect}
-              onClear={onClear}
+          <Box sx={{ display: "flex", flexDirection: "column" }}>
+            <Players
+              players={snapshot.players}
+              phase={snapshot.phase}
+              meId={me?.userId ?? null}
+              stats={snapshot.stats}
             />
-            <Box sx={{ justifySelf: { lg: "end" } }}>
-              <ActionBar
-                phase={snapshot.phase}
-                round={snapshot.round}
-                stats={snapshot.stats}
-                ticket={snapshot.ticket}
+            <Box
+              sx={{
+                display: "grid",
+                // The auto center column keeps the deck centered whatever width the sides take.
+                gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
+                gap: 2,
+                alignItems: "center",
+                mt: 1,
+              }}
+            >
+              {/* Empty left cell: the players moved to their own row above, and the cell keeps
+                  the deck centered between two equal 1fr columns. */}
+              <Box />
+              <Deck
                 deck={DECK}
-                disabled={disabled}
-                jiraSave={snapshot.jiraSave}
-                onReveal={onReveal}
-                onReset={onReset}
-                onSave={onSave}
+                selected={selected}
+                disabled={disabled || snapshot.phase === "idle"}
+                onSelect={onSelect}
+                onClear={onClear}
               />
+              <Box sx={{ justifySelf: { lg: "end" } }}>
+                <ActionBar
+                  phase={snapshot.phase}
+                  round={snapshot.round}
+                  stats={snapshot.stats}
+                  ticket={snapshot.ticket}
+                  deck={DECK}
+                  disabled={disabled}
+                  jiraSave={snapshot.jiraSave}
+                  onReveal={onReveal}
+                  onReset={onReset}
+                  onSave={onSave}
+                />
+              </Box>
             </Box>
           </Box>
         }

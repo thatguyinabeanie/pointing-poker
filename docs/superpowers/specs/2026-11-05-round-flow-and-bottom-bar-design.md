@@ -146,15 +146,22 @@ covers the stacked layout below `lg` and font differences.
 
 ### Players row (`Players.tsx`)
 
-- **Left: player pills.** Each pill holds the avatar, the short name and a mini card. The card is
-  a back while voted, a dashed outline while not voted, and the face-up value after the reveal,
-  with outliers in the warning color, as today. The viewer's own pill has a bold name and the
-  avatar ring, as today. Offline players stay dimmed.
-- **Compact mode:** a `ResizeObserver` on the pills container compares the full pills' width
-  with the space available. When they do not fit, every pill drops its name and shows only the
-  avatar and card. The full name goes in `title` and in the card's `aria-label`. All pills switch
-  together, so the row stays uniform. Compact mode is decided by measured width, not by a player
-  count.
+- **Center: player pills.** The row uses the deck row's `1fr auto 1fr` grid at `lg`: an empty
+  left cell, the pills in the center column so they sit centered over the deck, and the summary
+  in the right cell. Below `lg` the pills and the summary stack, centered. (Changed at the user's
+  request on 11/05/2026; the first version had the pills left-aligned.) Each pill holds the
+  avatar, the short name and a mini card. The card is a back while voted, a dashed outline while
+  not voted, and the face-up value after the reveal, with outliers in the warning color, as
+  today. The viewer's own pill has a bold name and the avatar ring, as today. Offline players
+  stay dimmed.
+- **Compact mode:** a hidden copy of the full pills (names always shown) is measured against the
+  width the center column can take while staying centered: at `lg`,
+  `rowWidth - 2 * summaryWidth - 2 * columnGap`, and below `lg` the row width. The summary is
+  counted on both sides so the pills stay centered on the deck instead of drifting left (the
+  user's request on 11/05/2026). One `ResizeObserver` watches the row, the summary and the
+  hidden copy. When they do not fit, every pill drops its name and shows only the avatar and
+  card. The full name goes in `title` and in the card's `aria-label`. All pills switch together,
+  so the row stays uniform. Compact mode is decided by measured width, not by a player count.
 - **Right, while voting:** "N of M voted" (connected players), as today.
 - **Right, after the reveal:**
   - A mini bar chart. There is one bar per voted card, in deck order. Height is proportional to

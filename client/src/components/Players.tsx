@@ -1,12 +1,13 @@
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
-import Stack from "@mui/material/Stack";
-import { alpha } from "@mui/material/styles";
+import { alpha, type Theme } from "@mui/material/styles";
 import Typography from "@mui/material/Typography";
-import { DECK, isNumericCard } from "../../../shared/deck.ts";
+import useMediaQuery from "@mui/material/useMediaQuery";
+import { useLayoutEffect, useRef, useState } from "react";
+import { isNumericCard } from "../../../shared/deck.ts";
 import type { Phase, PlayerView, Snapshot } from "../../../shared/protocol.ts";
 import { initials } from "../lib/initials.ts";
+import { RoundSummary } from "./RoundSummary.tsx";
 
 interface Props {
   players: PlayerView[];
@@ -39,127 +40,220 @@ function findOutliers(players: PlayerView[], revealed: boolean): Map<number, Out
   return result;
 }
 
-// Avatars holding small cards, for the left of the bottom bar. During voting a count
-// follows; after reveal the stats (average, distribution, consensus) follow instead.
+// Shared by the visible list and its hidden measuring copy, so both lay the pills out the same
+// way and the measurement matches what would render. The 2px side padding keeps the viewer's
+// avatar ring (outlineOffset 2) from being clipped by the overflow on the first pill.
+const PILL_LIST_SX = {
+  display: "flex",
+  alignItems: "center",
+  gap: 1,
+  listStyle: "none",
+  m: 0,
+  px: "2px",
+  py: 0,
+} as const;
+
+// The gap between the players row's three columns, in px, so the compact-mode math and the
+// rendered gap cannot disagree.
+const COLUMN_GAP = 16;
+
+// The players row, the top tier of the bottom bar. At lg it uses the deck row's 1fr auto 1fr
+// grid, so the pills sit centered over the deck, with the round summary (vote count or results)
+// in the right cell. A fixed height there, so the bar never grows. Below lg the pills and the
+// summary stack, centered.
 export function Players({ players, phase, meId, stats }: Props) {
   const revealed = phase === "revealed";
   const outliers = findOutliers(players, revealed);
   const connected = players.filter((p) => p.connected);
   const votedCount = connected.filter((p) => p.hasVoted).length;
-  // Object.entries puts integer-like keys ("1", "3") before "0.5" and "?", so the chips would
-  // not follow the deck. Walk the deck instead and keep the cards that were actually voted.
-  const countChips = stats ? DECK.filter((card) => card in stats.counts) : [];
+
+  // noSsr: there is no server rendering, and the default first-render false would run the
+  // compact check once with the stacked layout's rule at lg.
+  const isLg = useMediaQuery((t: Theme) => t.breakpoints.up("lg"), { noSsr: true });
+  const rowRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLUListElement>(null);
+  const [compact, setCompact] = useState(false);
+
+  // Compact mode measures the hidden copy, which always shows the names, and never the visible
+  // list. Measuring the visible list would loop: dropping the names makes the pills fit, which
+  // would bring the names back, which would make them overflow again.
+  // At lg the summary's width is counted on both sides of the center cell. The two 1fr columns
+  // are only equal while the pills leave room for a column as wide as the summary on the left,
+  // so this keeps the pills centered on the deck instead of drifting left as the row fills.
+  // Below lg the summary sits on its own line, so the pills get the whole row.
+  // The row, the summary and the hidden copy are all observed, so a reveal (wider summary), a
+  // join, a leave or a long new name re-checks even when the window width is unchanged.
+  // Layout effect so the first paint is already in the right mode.
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const summary = summaryRef.current;
+    const measure = measureRef.current;
+    if (!row || !summary || !measure) return;
+    const check = () => {
+      const available = isLg
+        ? row.clientWidth - 2 * summary.getBoundingClientRect().width - 2 * COLUMN_GAP
+        : row.clientWidth;
+      setCompact(measure.scrollWidth > available);
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(row);
+    observer.observe(summary);
+    observer.observe(measure);
+    return () => observer.disconnect();
+  }, [isLg]);
+
+  const pills = (isCompact: boolean) =>
+    players.map((p) => (
+      <Pill
+        key={p.userId}
+        player={p}
+        isMe={p.userId === meId}
+        revealed={revealed}
+        outlier={outliers.get(p.userId)}
+        compact={isCompact}
+      />
+    ));
+
   return (
-    <Stack direction="row" useFlexGap spacing={2} sx={{ alignItems: "center", minWidth: 0 }}>
-      <Stack
+    <Box
+      ref={rowRef}
+      sx={{
+        position: "relative",
+        display: "grid",
+        gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
+        justifyItems: { xs: "center", lg: "stretch" },
+        alignItems: "center",
+        columnGap: `${COLUMN_GAP}px`,
+        rowGap: 0.5,
+        height: { lg: 44 },
+        minHeight: 44,
+        pb: 1,
+        borderBottom: 1,
+        borderColor: "divider",
+      }}
+    >
+      {/* Empty left cell, the twin of the deck row's, so the center column lines up. */}
+      <Box sx={{ display: { xs: "none", lg: "block" } }} />
+      <Box
         component="ul"
-        direction="row"
-        useFlexGap
-        spacing={1.5}
         aria-label="Participants"
-        sx={{ flex: "0 1 auto", minWidth: 0, flexWrap: "wrap", listStyle: "none", m: 0, p: 0 }}
+        sx={{
+          ...PILL_LIST_SX,
+          // "safe" falls back to start alignment if the pills ever overflow, so the overflow is
+          // clipped on the right and the first pills are never pushed out of reach on the left.
+          justifyContent: "safe center",
+          // Stretch to the row's height so the overflow clip does not cut the avatar ring.
+          alignSelf: "stretch",
+          minWidth: 0,
+          maxWidth: "100%",
+          flexWrap: "nowrap",
+          overflow: "hidden",
+        }}
       >
-        {players.map((p) => (
-          <Player
-            key={p.userId}
-            player={p}
-            isMe={p.userId === meId}
-            revealed={revealed}
-            outlier={outliers.get(p.userId)}
-          />
-        ))}
-      </Stack>
-      {revealed ? (
-        stats ? (
-          <Stack
-            direction="row"
-            useFlexGap
-            spacing={0.5}
-            sx={{ flex: "0 1 auto", minWidth: 0, flexWrap: "wrap", alignItems: "center" }}
-          >
-            <Typography variant="body2">Avg {stats.average ?? "–"}</Typography>
-            {countChips.map((card) => (
-              <Chip key={card} size="small" label={`${card} ×${stats.counts[card]}`} />
-            ))}
-            <Chip
-              size="small"
-              variant="outlined"
-              color={stats.consensus ? "success" : "default"}
-              label={stats.consensus ? "Consensus" : "No consensus"}
-            />
-          </Stack>
-        ) : null
-      ) : (
-        <Typography variant="body2" sx={{ flexShrink: 0 }}>
-          {votedCount} of {connected.length} voted
-        </Typography>
-      )}
-    </Stack>
+        {pills(compact)}
+      </Box>
+      <Box ref={summaryRef} sx={{ justifySelf: { lg: "end" } }}>
+        <RoundSummary
+          phase={phase}
+          stats={stats}
+          votedCount={votedCount}
+          connectedCount={connected.length}
+        />
+      </Box>
+      <Box
+        component="ul"
+        ref={measureRef}
+        aria-hidden
+        sx={{
+          ...PILL_LIST_SX,
+          visibility: "hidden",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          height: 0,
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+          // max-content so the copy is never squeezed to the row width, which would make
+          // scrollWidth report the squeezed width instead of what the pills need.
+          width: "max-content",
+        }}
+      >
+        {pills(false)}
+      </Box>
+    </Box>
   );
 }
 
-interface PlayerProps {
+interface PillProps {
   player: PlayerView;
   isMe: boolean;
   revealed: boolean;
   outlier: Outlier | undefined;
+  compact: boolean;
 }
 
-function Player({ player: p, isMe, revealed, outlier }: PlayerProps) {
+function Pill({ player: p, isMe, revealed, outlier, compact }: PillProps) {
   const faceUp = revealed && p.vote !== null;
-  // An offline player keeps the tile's dimming. Their card shows only face-up after reveal,
+  // An offline player keeps the pill's dimming. Their card shows only face-up after reveal,
   // because the server counts their vote in the stats; before reveal a card would mean nothing.
   return (
     <Box
       component="li"
+      title={compact ? p.username : undefined}
       sx={{
-        width: 44,
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
+        gap: "6px",
+        // Pills never shrink: an overflowing row goes compact instead of squeezing the names.
+        flexShrink: 0,
+        p: "3px 8px 3px 3px",
+        borderRadius: "16px",
+        bgcolor: "action.hover",
         opacity: p.connected ? 1 : 0.35,
       }}
     >
-      <Box sx={{ position: "relative", width: 26, height: 26 }}>
-        <Avatar
-          role="img"
-          aria-label={p.username}
-          title={p.username}
-          sx={{
-            width: 26,
-            height: 26,
-            fontSize: 11,
-            // Ring is an outline so the avatar keeps its size; the name is also bold, so
-            // the viewer marker never relies on the ring alone.
-            ...(isMe && { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 }),
-          }}
-        >
-          {initials(p.username)}
-        </Avatar>
-        {p.connected || faceUp ? (
-          <Card
-            name={p.username}
-            faceUp={faceUp}
-            vote={p.vote}
-            voted={p.hasVoted}
-            outlier={outlier}
-          />
-        ) : null}
-      </Box>
-      <Typography
-        variant="caption"
+      <Avatar
+        role="img"
+        aria-label={p.username}
         title={p.username}
         sx={{
-          maxWidth: 44,
-          mt: 0.5,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          fontWeight: isMe ? 700 : 400,
+          width: 26,
+          height: 26,
+          fontSize: 11,
+          // Ring is an outline so the avatar keeps its size; the name is also bold, so
+          // the viewer marker never relies on the ring alone.
+          ...(isMe && { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 }),
         }}
       >
-        {p.username}
-      </Typography>
+        {initials(p.username)}
+      </Avatar>
+      {compact ? null : (
+        <Typography
+          variant="caption"
+          sx={{
+            fontSize: 13,
+            maxWidth: 96,
+            flexShrink: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontWeight: isMe ? 700 : 400,
+          }}
+        >
+          {p.username}
+        </Typography>
+      )}
+      {p.connected || faceUp ? (
+        <Card
+          name={p.username}
+          faceUp={faceUp}
+          vote={p.vote}
+          voted={p.hasVoted}
+          outlier={outlier}
+        />
+      ) : null}
     </Box>
   );
 }
@@ -186,17 +280,15 @@ function Card({ name, faceUp, vote, voted, outlier }: CardProps) {
       aria-label={label}
       sx={[
         {
-          position: "absolute",
-          top: -6,
-          right: -10,
-          width: 14,
-          height: 20,
+          flexShrink: 0,
+          width: 18,
+          height: 24,
           borderRadius: "3px",
           boxSizing: "border-box",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: 700,
           lineHeight: 1,
         },
