@@ -370,3 +370,37 @@ players row (`Players` + new `RoundSummary`) above the existing deck and actions
 - [ ] **Step 3: Report**
 
   List each check as passed, failed (with what was seen), or not run (with why).
+
+---
+
+### Task 6: Tint epic chips with their epic color (added 11/05/2026, runs before Task 5)
+
+The user asked for the epic chips on queue and search rows to have a background color so they
+separate from the white row. The user picked a tint of the epic's own color over a neutral gray.
+
+**Files:**
+- Modify: `client/src/components/TicketRowFrame.tsx:79-107` (the epic chip `Stack`)
+- Modify: `docs/spec/08-decision-log.md` (entry 49), `docs/spec/03-client.md` (the epic chip description)
+
+**Interfaces:**
+- Consumes: `epicHex(color: EpicColor | null): string` from `client/src/lib/epicColors.ts` (unchanged).
+
+- [ ] **Step 1: Tint the chip**
+
+  In the chip's `sx`, compute `const hex = epicHex(epic.color)` once for the chip and the dot.
+  Set `bgcolor: alpha(hex, 0.12)` (`alpha` from `@mui/material/styles`) and change the inset
+  outline to `inset 0 0 0 1px ${alpha(hex, 0.5)}`. Keep it an inset `boxShadow` so the row height
+  is unchanged. The dot and the name text are unchanged, and the text stays `text.primary`. An
+  epic with no Jira color gets the gray tint from `NO_COLOR_HEX` through `epicHex`, with no
+  special case. Update the inset-shadow comment so it still explains the height reason.
+
+- [ ] **Step 2: Docs**
+
+  - Decision 49 ("Epic chips are tinted with the epic color"): the reason (the outlined chip
+    blended into the white row), the 12% fill and 50% outline, and that it applies wherever
+    `TicketRowFrame` shows an epic (queue and search rows; session history rows show no epic).
+  - `03-client.md`: update the epic chip description.
+
+- [ ] **Step 3: Gate, commit, push**
+
+  The gate exits 0. Commit "Tint epic chips with their epic color" with the why. Push.
