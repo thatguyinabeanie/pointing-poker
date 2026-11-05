@@ -1,9 +1,14 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { RawData, WebSocket } from "ws";
 import { z } from "zod";
-import { expandBareIssueNumber, ISSUE_KEY, MIN_QUERY_LENGTH } from "../shared/constants.ts";
+import {
+  expandBareIssueNumber,
+  ISSUE_KEY,
+  MIN_QUERY_LENGTH,
+  sameNames,
+} from "../shared/constants.ts";
 import { DECK } from "../shared/deck.ts";
-import type { QueueSection, QueueSettings, ServerMessage } from "../shared/protocol.ts";
+import type { QueueSection, QueueSettings, ServerMessage, Ticket } from "../shared/protocol.ts";
 import { env } from "./env.ts";
 import * as game from "./game.ts";
 import { trackSocket } from "./heartbeat.ts";
@@ -17,6 +22,7 @@ const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("vote"), card: z.string().max(8) }),
   z.object({ type: z.literal("reveal") }),
   z.object({ type: z.literal("setAutoReveal"), enabled: z.boolean() }),
+  z.object({ type: z.literal("setAutoAdvance"), enabled: z.boolean() }),
   z.object({ type: z.literal("reset"), clearTicket: z.boolean().optional() }),
   z.object({ type: z.literal("loadTicket"), key: z.string().trim().min(1).max(64) }),
   // No .int(): 0.5 is a card. game.canSave still rejects anything that is not a numeric deck value.
@@ -32,6 +38,7 @@ const commandSchema = z.discriminatedUnion("type", [
         .nullable()
         .optional(),
       boardId: z.number().int().positive().nullable().optional(),
+      issueTypes: z.array(z.string().trim().min(1).max(64)).max(30).optional(),
     }),
   }),
   z.object({ type: z.literal("refreshQueue") }),
@@ -142,6 +149,13 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   }
   let state = game.createInitialState({ defaultProjectKey });
   let loadSeq = 0;
+  // Ticket loads still waiting on Jira, across every socket. Auto-advance checks it so a load a
+  // player started during a save is not overridden by the advance (loadSeq alone would let the
+  // later-started advance win and drop the player's choice).
+  let loadsPending = 0;
+  // Bumped by every accepted save, across every socket. Only the latest save may auto-advance:
+  // see the check at the end of saveEstimate.
+  let saveAttempt = 0;
   // Ticket keys with a Jira write still running. game's jiraSave resets with each round, so it
   // cannot stop a second PUT for the same ticket from a newer round; if the older PUT landed
   // last, Jira would keep the old estimate while the room showed the newer one as saved.
@@ -149,6 +163,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   let errorId = 0;
   let queueSeq = 0;
   let boardsSeq = 0;
+  let issueTypesSeq = 0;
   let lastQueueRefreshAt = 0;
   let bootstrapped = false;
   const registry = new Map<number, Set<WebSocket>>();
@@ -264,6 +279,32 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     return outcome.status === "failed" ? outcome.failure : null;
   }
 
+  // Runs wherever the boards are fetched for a project, with the same stale guard. A failure is
+  // only logged: the list stays as it was (empty after a project change), which disables the
+  // Type menu and leaves the queue unfiltered, so there is nothing for the user to act on.
+  async function fetchIssueTypes(): Promise<void> {
+    const projectKey = state.queueSettings.projectKey;
+    if (projectKey === null) return;
+    const seq = ++issueTypesSeq;
+    const res = await jira.listIssueTypes(projectKey);
+    if (seq !== issueTypesSeq || state.queueSettings.projectKey !== projectKey) {
+      app.log.debug({ projectKey }, "dropped stale issue types result");
+      return;
+    }
+    if (!res.ok) {
+      app.log.warn({ reason: res.reason, projectKey }, "issue types fetch failed");
+      return;
+    }
+    const selectedBefore = state.queueSettings.issueTypes;
+    applyState(game.setIssueTypes(state, res.value));
+    broadcast();
+    // setIssueTypes drops selected types that Jira renamed or deleted. The queue was fetched with
+    // the old selection, so refetch it, as a Type filter change does. Awaited rather than handed
+    // to runAsync, which is per socket: this helper is room-level, and every caller already
+    // handles a throw (runAsync for commands, onThrow at bootstrap).
+    if (!sameNames(selectedBefore, state.queueSettings.issueTypes)) await fetchQueue();
+  }
+
   // Resolves JIRA_DEFAULT_BOARD (numeric id or board name) against the default project's boards
   // and applies it before the first queue fetch. Any miss leaves boardId null so the queue works.
   async function applyDefaultBoard(): Promise<void> {
@@ -340,6 +381,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     }
     bootstrapped = true;
     void fetchProjectsOnce().catch(onThrow);
+    // The queue does not wait for it: no filter can be set before the menu has types.
+    void fetchIssueTypes().catch(onThrow);
     // The queue waits for default board resolution so its first fetch uses the resolved board.
     void (async () => {
       if (defaultBoard === null) {
@@ -445,6 +488,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
           applyState(game.setAutoReveal(state, cmd.enabled));
           broadcast();
           return;
+        case "setAutoAdvance":
+          applyState(game.setAutoAdvance(state, cmd.enabled));
+          broadcast();
+          return;
         case "reset":
           // Bumped so a loadTicket still waiting on Jira is dropped; otherwise it would start a
           // new round when it resolves and wipe votes cast since this reset.
@@ -488,7 +535,13 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       key = key.toUpperCase();
 
       const seq = ++loadSeq;
-      const res = await jira.getIssue(key);
+      loadsPending += 1;
+      let res: JiraResult<Ticket>;
+      try {
+        res = await jira.getIssue(key);
+      } finally {
+        loadsPending -= 1;
+      }
       if (seq !== loadSeq) {
         log.debug({ key }, "dropped stale loadTicket result");
         return;
@@ -522,11 +575,14 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       if (state.ticket === null) return;
       const round = state.round;
       const key = state.ticket.key;
+      // Taken before the write: the queue is refetched afterward and the saved ticket drops out.
+      const nextKey = game.nextQueueKey(state.queue, key);
       if (state.jiraSave.status === "saving" || savesInFlight.has(key)) {
         sendError(socket, "save_in_progress", MESSAGES.save_in_progress);
         return;
       }
       savesInFlight.add(key);
+      const attempt = ++saveAttempt;
       const by = username;
 
       applyState(game.markSave(state, { status: "saving", points, by }));
@@ -572,6 +628,24 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         // The ticket has points now, so it leaves the queue, even when the round went stale.
         // Not subject to the 5s refresh window.
         await fetchQueue();
+
+        // A reset or a ticket load can land during either await above (the Jira write and the
+        // refetch), and must not be overridden: a changed round cancels the advance, and so does
+        // a ticket load still in flight, which has not changed the round yet.
+        // A newer save, whether still pending or already failed, cancels this one's advance. The
+        // write lock is released before the refetch, so a second Save can start during it; if the
+        // older save advanced then, the newer write would land on a changed round and its
+        // failure would be dropped as stale, so nobody would ever see it.
+        if (
+          state.autoAdvance &&
+          state.round === round &&
+          loadsPending === 0 &&
+          attempt === saveAttempt &&
+          nextKey !== null
+        ) {
+          log.info({ key, nextKey }, "auto-advance");
+          await loadTicket(nextKey);
+        }
       });
     }
 
@@ -593,16 +667,20 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         runAsync(async () => {
           await fetchBoards();
         });
+        runAsync(fetchIssueTypes);
       }
+      // Any effective change refetches, including a Type filter change on its own.
       runAsync(fetchQueue);
     }
 
     async function refreshProjects(): Promise<void> {
       // jira.ts caches both lists for 10 minutes and the protocol has no cache-bypass argument,
-      // so inside that window this re-sends the cached lists.
+      // so inside that window this re-sends the cached lists. The issue types are refreshed too,
+      // but never reported: fetchIssueTypes only logs its failures.
       const [projectsFailure, boardsFailure] = await Promise.all([
         fetchProjectsOnce(),
         fetchBoards(),
+        fetchIssueTypes(),
       ]);
       const failure = projectsFailure ?? boardsFailure;
       if (failure) sendError(socket, failure.reason, failure.message);

@@ -12,3 +12,12 @@ export function expandBareIssueNumber(input: string, projectKey: string | null):
 
 // Shared so the client's debounce gate and the server's check cannot drift apart.
 export const MIN_QUERY_LENGTH = 2;
+
+// Order-insensitive: the Type menu sends names in click order, and the JQL `in (...)` ignores
+// order, so a reordered selection is not a change. Shared so the server's change check and the
+// menu's close-time dispatch agree on what counts as a change. Both lists are free of repeats.
+export function sameNames(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(b);
+  return a.every((name) => set.has(name));
+}

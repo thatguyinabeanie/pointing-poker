@@ -1,3 +1,4 @@
+import { sameNames } from "../shared/constants.ts";
 import { DECK, isNumericCard } from "../shared/deck.ts";
 import type {
   Card,
@@ -31,11 +32,22 @@ export interface GameState {
   queue: QueueState;
   projects: JiraProject[];
   boards: JiraBoard[];
+  // The project's issue type names (the Type menu), not the selection in queueSettings.
+  issueTypes: string[];
   // Newest first. Lives in memory only, so a restart clears it.
   history: SessionHistoryEntry[];
   // Room-wide switch, kept across rounds and tickets (newRound spreads state). Only a server
   // restart puts it back to on.
   autoReveal: boolean;
+  // Room-wide switch, kept across rounds (newRound spreads state). Off by default, and a server
+  // restart turns it off again.
+  autoAdvance: boolean;
+  // Whether this round's reveal has written its history row. A vote during `revealed` refreshes
+  // that row when it exists and records it otherwise (an empty reveal writes none). Checking for
+  // votes instead got "reveal with votes, everyone withdraws, someone votes again" wrong: the row
+  // existed, but the empty room looked like an empty reveal and the row was marked re-voted.
+  // newRound resets it. Server-only; not part of the Snapshot.
+  revealRecorded: boolean;
 }
 
 export type Result = { ok: true; state: GameState } | { ok: false; reason: string };
@@ -51,12 +63,16 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
     queueSettings: {
       projectKey: opts.defaultProjectKey ?? null,
       boardId: null,
+      issueTypes: [],
     },
     queue: { sections: [], loading: false, error: null, fetchedAt: null },
     projects: [],
     boards: [],
+    issueTypes: [],
     history: [],
     autoReveal: true,
+    autoAdvance: false,
+    revealRecorded: false,
   };
 }
 
@@ -130,6 +146,7 @@ function newRound(state: GameState, ticket: Ticket | null, phase: Phase): GameSt
     phase,
     round: state.round + 1,
     jiraSave: { status: "idle" },
+    revealRecorded: false,
   };
 }
 
@@ -139,19 +156,21 @@ export function vote(
   card: string,
   now: string = new Date().toISOString(),
 ): Result {
-  if (state.phase !== "voting") return fail("not_voting");
+  if (state.phase !== "voting" && state.phase !== "revealed") return fail("not_voting");
   if (!isCard(card)) return fail("invalid_card");
   const player = state.players.get(userId);
   if (!player) return fail("unknown_player");
-  return ok(
-    autoRevealIfReady(
-      withPlayers(state, (players) => {
-        // Clicking the selected card again withdraws it, so there is no separate "clear" command.
-        players.set(userId, { ...player, vote: player.vote === card ? null : card });
-      }),
-      now,
-    ),
-  );
+  const next = withPlayers(state, (players) => {
+    // Clicking the selected card again withdraws it, so there is no separate "clear" command.
+    players.set(userId, { ...player, vote: player.vote === card ? null : card });
+  });
+  // Before the reveal, auto-reveal may fire. After it, a vote change updates this round's history
+  // row in place. When the reveal wrote no row (an empty reveal), refreshing would drop this
+  // first vote or edit an older round's row in place, so the vote is recorded the way a fresh
+  // reveal would be. The flag, not the current votes, decides: a room where everyone withdrew
+  // after a real reveal still has its row, and must not mark it re-voted.
+  if (next.phase !== "revealed") return ok(autoRevealIfReady(next, now));
+  return ok(next.revealRecorded ? refreshRevealedRow(next) : recordReveal(next, now));
 }
 
 // Flips the cards once every connected player holds a vote. Disconnected players are left out
@@ -178,6 +197,20 @@ export function setAutoReveal(
   return ok(autoRevealIfReady({ ...state, autoReveal: enabled }, now));
 }
 
+// Only sets the flag. The advance itself happens in ws.ts after a successful Jira save.
+export function setAutoAdvance(state: GameState, enabled: boolean): Result {
+  return ok({ ...state, autoAdvance: enabled });
+}
+
+// The ticket after currentKey in queue order (sprints first, then backlog), or the first ticket
+// when currentKey is not queued. Null when there is nothing to advance to.
+export function nextQueueKey(queue: QueueState, currentKey: string | null): string | null {
+  const keys = queue.sections.flatMap((section) => section.items.map((item) => item.key));
+  const at = currentKey === null ? -1 : keys.indexOf(currentKey);
+  if (at === -1) return keys[0] ?? null;
+  return keys.slice(at + 1).find((key) => key !== currentKey) ?? null;
+}
+
 // Partial votes are allowed: a stuck teammate should not block the room.
 export function reveal(state: GameState, now: string = new Date().toISOString()): Result {
   if (state.phase !== "voting") return fail("not_voting");
@@ -185,6 +218,29 @@ export function reveal(state: GameState, now: string = new Date().toISOString())
 }
 
 const MAX_HISTORY = 50;
+
+// A vote changed after the reveal: recompute the stats on the existing row, same position. This
+// does not use recordReveal because that marks any existing row as re-voted and moves it to the
+// top, and a changed vote is the same reveal, not a new round. With no votes left the row keeps
+// its last stats (summarize would give nulls) rather than going blank.
+export function refreshRevealedRow(state: GameState): GameState {
+  const { ticket } = state;
+  if (ticket === null) return state;
+  const index = state.history.findIndex((row) => row.key === ticket.key);
+  const voters = [...state.players.values()].filter((p) => p.vote !== null).length;
+  if (index === -1 || voters === 0) return state;
+  const stats = summarize(state.players.values());
+  const history = [...state.history];
+  history[index] = {
+    ...history[index],
+    average: stats.average,
+    min: stats.min,
+    max: stats.max,
+    consensus: stats.consensus,
+    voters,
+  };
+  return { ...state, history };
+}
 
 // One row per ticket key: a re-reveal replaces the row, keeps its saved points and moves it to
 // the top. The array is replaced, never mutated, because viewFor hands it out by reference.
@@ -211,7 +267,7 @@ export function recordReveal(state: GameState, now: string): GameState {
     revealedAt: now,
   };
   const rest = state.history.filter((r) => r.key !== ticket.key);
-  return { ...state, history: [row, ...rest].slice(0, MAX_HISTORY) };
+  return { ...state, history: [row, ...rest].slice(0, MAX_HISTORY), revealRecorded: true };
 }
 
 // Keyed by ticket, not by round, so a save that finishes after the room moved on still lands.
@@ -244,19 +300,34 @@ export function setQueueSettings(state: GameState, partial: Partial<QueueSetting
   const next: QueueSettings = { ...state.queueSettings };
   if (partial.projectKey !== undefined) next.projectKey = partial.projectKey;
   if (partial.boardId !== undefined) next.boardId = partial.boardId;
+  if (partial.issueTypes !== undefined) {
+    // Only names from the project's own list: Jira answers 400 to `issuetype in (...)` with an
+    // unknown name, so a selection sent for the previous project would fail the whole queue.
+    // With no list loaded every name is dropped, which leaves the queue unfiltered.
+    const known = new Set(state.issueTypes);
+    next.issueTypes = [...new Set(partial.issueTypes)].filter((name) => known.has(name));
+  }
 
   const projectChanged = next.projectKey !== state.queueSettings.projectKey;
   // A board belongs to one project, so a project change always drops the board, even if
   // the same message also named one (that id was picked from the old project's list).
-  if (projectChanged) next.boardId = null;
+  // Issue types are per project too, so the type filter is dropped in the same place.
+  if (projectChanged) {
+    next.boardId = null;
+    next.issueTypes = [];
+  }
 
-  const changed = projectChanged || next.boardId !== state.queueSettings.boardId;
+  const changed =
+    projectChanged ||
+    next.boardId !== state.queueSettings.boardId ||
+    !sameNames(next.issueTypes, state.queueSettings.issueTypes);
   if (!changed) return ok(state);
 
   return ok({
     ...state,
     queueSettings: next,
     boards: projectChanged ? [] : state.boards,
+    issueTypes: projectChanged ? [] : state.issueTypes,
     queue: { ...state.queue, loading: true },
   });
 }
@@ -288,6 +359,23 @@ export function setBoards(state: GameState, boards: JiraBoard[]): Result {
   return ok({ ...state, boards });
 }
 
+// Also drops selected names that are no longer in the list: a type renamed or deleted in Jira
+// would otherwise stay in the selection, and Jira answers 400 to the queue's `issuetype in (...)`
+// for every fetch after that. An empty list keeps the selection, because an empty answer must not
+// wipe the room's filter (a failed fetch never reaches here at all).
+export function setIssueTypes(state: GameState, types: string[]): Result {
+  if (types.length === 0) return ok({ ...state, issueTypes: types });
+  const known = new Set(types);
+  const selected = state.queueSettings.issueTypes;
+  const kept = selected.filter((name) => known.has(name));
+  // Keeps the settings object (and the selection's click order) when nothing was dropped.
+  const queueSettings =
+    kept.length === selected.length
+      ? state.queueSettings
+      : { ...state.queueSettings, issueTypes: kept };
+  return ok({ ...state, issueTypes: types, queueSettings });
+}
+
 export function markSave(state: GameState, save: JiraSave): Result {
   if (save.status !== "idle") {
     if (state.phase !== "revealed") return fail("not_revealed");
@@ -317,13 +405,18 @@ export function summarize(players: Iterable<Player>): Stats {
     if (isNumericCard(vote)) numeric.push(Number(vote));
   }
   if (numeric.length === 0) {
-    return { average: null, min: null, max: null, counts, consensus: false };
+    return { average: null, median: null, min: null, max: null, counts, consensus: false };
   }
   const sum = numeric.reduce((a, b) => a + b, 0);
   const min = Math.min(...numeric);
   const max = Math.max(...numeric);
+  const sorted = [...numeric].sort((a, b) => a - b);
+  const mid = sorted.length / 2;
+  const medianRaw =
+    sorted.length % 2 === 1 ? sorted[Math.floor(mid)] : (sorted[mid - 1] + sorted[mid]) / 2;
   return {
     average: Math.round((sum / numeric.length) * 10) / 10,
+    median: Math.round(medianRaw * 10) / 10,
     min,
     max,
     counts,
@@ -355,7 +448,9 @@ export function viewFor(state: GameState, viewerId: number): Snapshot {
     queue: state.queue,
     projects: state.projects,
     boards: state.boards,
+    issueTypes: state.issueTypes,
     history: state.history,
     autoReveal: state.autoReveal,
+    autoAdvance: state.autoAdvance,
   };
 }

@@ -89,6 +89,8 @@ export interface PlayerView {
 export interface QueueSettings {
   projectKey: string | null;
   boardId: number | null;
+  // Jira issue type names to keep in the queue. Empty means all types.
+  issueTypes: string[];
 }
 // The server maps Jira's raw color values into this fixed set, so the client never sees raw Jira values.
 export type EpicColor =
@@ -155,6 +157,7 @@ export interface Snapshot {
   players: PlayerView[];
   stats: {
     average: number | null;
+    median: number | null;
     min: number | null;
     max: number | null;
     counts: Record<string, number>;
@@ -165,16 +168,20 @@ export interface Snapshot {
   queue: QueueState;
   projects: JiraProject[];
   boards: JiraBoard[];
+  // The project's issue type names, in Jira's order, for the Type filter menu.
+  issueTypes: string[];
   // Newest first. Same list for every viewer.
   history: SessionHistoryEntry[];
   // Shared room state, same for every viewer.
   autoReveal: boolean;
+  autoAdvance: boolean;
 }
 
 export type ClientCommand =
   | { type: "vote"; card: Card }
   | { type: "reveal" }
   | { type: "setAutoReveal"; enabled: boolean }
+  | { type: "setAutoAdvance"; enabled: boolean }
   | { type: "reset"; clearTicket?: boolean }
   | { type: "loadTicket"; key: string }
   | { type: "saveEstimate"; points: number }

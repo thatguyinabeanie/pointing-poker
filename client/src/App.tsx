@@ -2,8 +2,6 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Container from "@mui/material/Container";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import Switch from "@mui/material/Switch";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DECK } from "../../shared/deck.ts";
 import type { Card, ClientCommand, QueueSettings } from "../../shared/protocol.ts";
@@ -15,6 +13,7 @@ import { LeftPanel } from "./components/LeftPanel.tsx";
 import { type Notice, NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
+import { RoomSwitch } from "./components/RoomSwitch.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
 
@@ -64,7 +63,7 @@ export function App() {
   );
 
   const disabled = !connected;
-  // The server shows a player their own vote before reveal, so this works while voting.
+  // The server shows a player their own vote before reveal, so this works while voting and after the reveal.
   const selected = snapshot?.players.find((p) => p.userId === me?.userId)?.vote ?? null;
 
   const onChangeSettings = useCallback(
@@ -89,13 +88,13 @@ export function App() {
     if (selected) dispatch({ type: "vote", card: selected });
   }, [dispatch, selected]);
   const onReveal = useCallback(() => dispatch({ type: "reveal" }), [dispatch]);
-  const onAutoRevealChange = useCallback(
+  const onAutoRevealToggle = useCallback(
     (enabled: boolean) => dispatch({ type: "setAutoReveal", enabled }),
     [dispatch],
   );
-  const onAutoRevealToggle = useCallback(
-    (e: { target: { checked: boolean } }) => onAutoRevealChange(e.target.checked),
-    [onAutoRevealChange],
+  const onAutoAdvanceToggle = useCallback(
+    (enabled: boolean) => dispatch({ type: "setAutoAdvance", enabled }),
+    [dispatch],
   );
   const onReset = useCallback(
     ({ clearTicket }: { clearTicket: boolean }) =>
@@ -159,44 +158,49 @@ export function App() {
         }
         main={<TicketView ticket={snapshot.ticket} />}
         bottom={
-          <Box
-            sx={{
-              display: "grid",
-              // The auto center column keeps the deck centered whatever width the sides take.
-              gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
-              gap: 2,
-              alignItems: "center",
-            }}
-          >
-            {/* minWidth 0 lets a long player list wrap here instead of pushing the deck off-center. */}
-            <Box sx={{ minWidth: 0 }}>
-              <Players
-                players={snapshot.players}
-                phase={snapshot.phase}
-                meId={me?.userId ?? null}
-                stats={snapshot.stats}
-              />
-            </Box>
-            <Deck
-              deck={DECK}
-              selected={selected}
-              disabled={disabled || snapshot.phase !== "voting"}
-              onSelect={onSelect}
-              onClear={onClear}
+          <Box sx={{ display: "flex", flexDirection: "column" }}>
+            <Players
+              players={snapshot.players}
+              phase={snapshot.phase}
+              meId={me?.userId ?? null}
+              stats={snapshot.stats}
             />
-            <Box sx={{ justifySelf: { lg: "end" } }}>
-              <ActionBar
-                phase={snapshot.phase}
-                round={snapshot.round}
-                stats={snapshot.stats}
-                ticket={snapshot.ticket}
+            <Box
+              sx={{
+                display: "grid",
+                // The auto center column keeps the deck centered whatever width the sides take.
+                gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
+                // 8px between lg and xl gives the actions cell the room the Save spinner needs.
+                gap: { xs: 2, lg: 1, xl: 2 },
+                alignItems: "center",
+                mt: 1,
+              }}
+            >
+              {/* Empty left cell: the players moved to their own row above, and the cell keeps
+                  the deck centered between two equal 1fr columns. Below lg the row stacks, where
+                  an empty cell would only add a gap above the deck. */}
+              <Box sx={{ display: { xs: "none", lg: "block" } }} />
+              <Deck
                 deck={DECK}
-                disabled={disabled}
-                jiraSave={snapshot.jiraSave}
-                onReveal={onReveal}
-                onReset={onReset}
-                onSave={onSave}
+                selected={selected}
+                disabled={disabled || snapshot.phase === "idle"}
+                onSelect={onSelect}
+                onClear={onClear}
               />
+              <Box sx={{ justifySelf: { lg: "end" } }}>
+                <ActionBar
+                  phase={snapshot.phase}
+                  round={snapshot.round}
+                  stats={snapshot.stats}
+                  ticket={snapshot.ticket}
+                  deck={DECK}
+                  disabled={disabled}
+                  jiraSave={snapshot.jiraSave}
+                  onReveal={onReveal}
+                  onReset={onReset}
+                  onSave={onSave}
+                />
+              </Box>
             </Box>
           </Box>
         }
@@ -211,30 +215,35 @@ export function App() {
         meName={me?.username}
         controls={
           snapshot ? (
+            <QueueControls
+              settings={snapshot.queueSettings}
+              projects={snapshot.projects}
+              boards={snapshot.boards}
+              issueTypes={snapshot.issueTypes}
+              disabled={disabled}
+              refreshing={snapshot.queue.loading}
+              onChangeSettings={onChangeSettings}
+              onRefresh={onRefresh}
+            />
+          ) : undefined
+        }
+        actions={
+          snapshot ? (
+            // Room settings, not queue settings. In the action bar Auto-reveal wrapped "Next
+            // ticket" onto a second row after reveal; on the left both switches crowded the
+            // Project, Board and Type selects, so they sit on the right (decision 50).
             <>
-              <QueueControls
-                settings={snapshot.queueSettings}
-                projects={snapshot.projects}
-                boards={snapshot.boards}
-                disabled={disabled}
-                refreshing={snapshot.queue.loading}
-                onChangeSettings={onChangeSettings}
-                onRefresh={onRefresh}
-              />
-              {/* A room setting like Project and Board. In the action bar it wrapped "Next ticket"
-                  onto a second row after reveal. The ml replaces the label's default -11px
-                  margin so it sits one gap after the refresh button. */}
-              <FormControlLabel
+              <RoomSwitch
                 label="Auto-reveal"
+                checked={snapshot.autoReveal}
                 disabled={disabled}
-                sx={{ ml: 1, mr: 0, flexShrink: 0, whiteSpace: "nowrap" }}
-                control={
-                  <Switch
-                    size="small"
-                    checked={snapshot.autoReveal}
-                    onChange={onAutoRevealToggle}
-                  />
-                }
+                onToggle={onAutoRevealToggle}
+              />
+              <RoomSwitch
+                label="Auto-advance"
+                checked={snapshot.autoAdvance}
+                disabled={disabled}
+                onToggle={onAutoAdvanceToggle}
               />
             </>
           ) : undefined

@@ -5,7 +5,8 @@ import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import { useCallback, useEffect, useId, useState } from "react";
+import type { SxProps, Theme } from "@mui/material/styles";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { isNumericCard } from "../../../shared/deck.ts";
 import type { JiraSave, Phase, Snapshot, Ticket } from "../../../shared/protocol.ts";
 import { suggestPoints } from "../lib/estimate.ts";
@@ -39,10 +40,17 @@ interface Props {
   onSave: (points: number) => void;
 }
 
+// Module level so the sx is not rebuilt per render; the reasons are on the Stack below.
+const ROW_SX: SxProps<Theme> = (theme) => ({
+  alignItems: "center",
+  flexWrap: { xs: "wrap", lg: "nowrap" },
+  [theme.breakpoints.between("lg", "xl")]: { "& .MuiButton-root": { px: 1.5 } },
+});
+
 const RESET_LABEL: Record<Phase, string> = {
   idle: "Start round",
   voting: "Reset",
-  revealed: "Next ticket",
+  revealed: "Next",
 };
 
 export function ActionBar({
@@ -60,27 +68,39 @@ export function ActionBar({
   const labelId = useId();
   const [points, setPoints] = useState<string>("");
   const ticketKey = ticket?.key ?? null;
+  const suggestion = suggestPoints(stats, deck);
+  // The manual pick for this ticket and round, kept in memory as well as in sessionStorage.
+  // writeJson ignores failures, so with storage blocked or full the stored copy can be missing,
+  // and the next changed suggestion would then silently replace the user's pick.
+  const manualPick = useRef<StoredPick | null>(null);
 
-  // Re-suggest on a new reveal, ticket or round, so a new reveal never keeps a stale pick. The
-  // one exception is a refresh mid-reveal: a manual pick stored for this exact ticket and round
-  // is restored. Any other stored pick is stale and is dropped.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deck is stable; stats is omitted so a manual pick survives later snapshots
+  // Re-suggest on a new reveal, ticket or round, so a new reveal never keeps a stale pick. A
+  // manual pick for this exact ticket and round wins over the suggestion: the in-memory one
+  // first, then the stored one, which is what survives a refresh mid-reveal. Any other pick is
+  // stale and is dropped from both places.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deck is stable; stats is omitted (a new object every snapshot), but suggestion is in the list so a vote change after the reveal re-suggests, and a manual pick (in memory, or stored for a refresh) still wins
   useEffect(() => {
-    const stored = readPick();
-    if (
-      stored !== null &&
+    const isCurrent = (pick: StoredPick | null): pick is StoredPick =>
+      pick !== null &&
       phase === "revealed" &&
-      stored.ticketKey === ticketKey &&
-      stored.round === round &&
-      deck.includes(stored.points) &&
-      isNumericCard(stored.points)
-    ) {
+      pick.ticketKey === ticketKey &&
+      pick.round === round &&
+      deck.includes(pick.points) &&
+      isNumericCard(pick.points);
+    if (isCurrent(manualPick.current)) {
+      setPoints(manualPick.current.points);
+      return;
+    }
+    const stored = readPick();
+    if (isCurrent(stored)) {
+      manualPick.current = stored;
       setPoints(stored.points);
       return;
     }
+    manualPick.current = null;
     removeItem("session", PICK_KEY);
-    setPoints(suggestPoints(stats, deck) ?? "");
-  }, [phase, ticketKey, round]);
+    setPoints(suggestion ?? "");
+  }, [phase, ticketKey, round, suggestion]);
 
   const saving = jiraSave.status === "saving";
   const canSave = phase === "revealed" && ticket !== null && points !== "" && !saving;
@@ -95,7 +115,9 @@ export function ActionBar({
     (e: { target: { value: string } }) => {
       setPoints(e.target.value);
       if (ticketKey !== null) {
-        writeJson("session", PICK_KEY, { ticketKey, round, points: e.target.value });
+        const pick = { ticketKey, round, points: e.target.value };
+        manualPick.current = pick;
+        writeJson("session", PICK_KEY, pick);
       }
     },
     [ticketKey, round],
@@ -109,11 +131,15 @@ export function ActionBar({
   );
 
   // One row, controls chosen by phase: voting shows Reveal and Reset; revealed shows the
-  // points select, Save and Next ticket; idle shows Start round. Stats live in Players.
-  // Wraps so the select and buttons stay on screen below lg, where the bar is
-  // not a wide grid cell.
+  // points select, Save and Next; idle shows Start round. Stats live in RoundSummary, in the
+  // players row above. The labels are short so the revealed controls fit one row beside the
+  // deck at laptop widths. Wraps so the select and buttons stay on screen below lg, where the
+  // bar is not a wide grid cell. At lg it never wraps: a second line overflowed the fixed 148px
+  // bar, so the deck makes room instead (see Deck). The deck change alone fits the revealed row
+  // with the Save spinner at a 1200px layout with 0px to spare, so the buttons also take 12px
+  // side padding between lg and xl to leave room for font differences.
   return (
-    <Stack direction="row" useFlexGap spacing={1} sx={{ alignItems: "center", flexWrap: "wrap" }}>
+    <Stack direction="row" useFlexGap spacing={1} sx={ROW_SX}>
       {phase === "voting" && (
         <Button variant="contained" disabled={disabled} onClick={onReveal}>
           Reveal
@@ -121,9 +147,9 @@ export function ActionBar({
       )}
       {phase === "revealed" && (
         <>
-          <FormControl size="small" sx={{ minWidth: 140 }} disabled={disabled}>
-            <InputLabel id={labelId}>Story points</InputLabel>
-            <Select labelId={labelId} label="Story points" value={points} onChange={onPointsChange}>
+          <FormControl size="small" sx={{ minWidth: 96 }} disabled={disabled}>
+            <InputLabel id={labelId}>Points</InputLabel>
+            <Select labelId={labelId} label="Points" value={points} onChange={onPointsChange}>
               {numericDeck.map((card) => (
                 <MenuItem key={card} value={card}>
                   {card}
@@ -133,11 +159,13 @@ export function ActionBar({
           </FormControl>
           <Button
             variant="contained"
+            // The visible text is short to fit the bar; the accessible name keeps the target.
+            aria-label="Save to Jira"
             disabled={disabled || !canSave}
             onClick={onSaveClick}
             startIcon={saving ? <CircularProgress size={16} /> : undefined}
           >
-            Save to Jira
+            Save
           </Button>
         </>
       )}

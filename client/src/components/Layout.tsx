@@ -13,16 +13,19 @@ interface Props {
   bottom: ReactNode;
 }
 
-// Heights (px) at lg and up. The header height comes from layoutConstants. The bottom bar sizes to
-// its content (so a second row of players is never hidden); Layout measures it into a CSS variable
-// that the pane max-height reads, and the bar is capped at about two player rows and scrolls
-// beyond that. Below lg everything stacks and the page scrolls.
-const BOTTOM_BAR_FALLBACK_HEIGHT = 88;
-const BOTTOM_BAR_MAX_HEIGHT = 140;
+// Heights (px) at lg and up. The header height comes from layoutConstants. The bottom bar is one
+// fixed height in every phase, so the panes above never jump when a round is revealed or someone
+// joins; a crowded players row goes compact (avatars only) instead of wrapping onto a second row.
+// 148 is 12 + 12 padding, the 44px players row, the 8px gap and 68px for the deck row (64px cards
+// plus the selected card's 4px lift), with a little slack. Layout still measures the bar into a
+// CSS variable that the pane max-height reads, so the panes follow the rendered bar rather than
+// trusting this constant. Below lg everything stacks, the bar sizes to its content and the page
+// scrolls.
+const BOTTOM_BAR_HEIGHT = 148;
 const BOTTOM_BAR_HEIGHT_VAR = "--bottom-bar-height";
 const PAGE_TOP_PADDING = 16;
 const BAR_GAP = 16;
-const PANE_MAX_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - var(${BOTTOM_BAR_HEIGHT_VAR}, ${BOTTOM_BAR_FALLBACK_HEIGHT}px) - ${PAGE_TOP_PADDING + BAR_GAP}px)`;
+const PANE_MAX_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - var(${BOTTOM_BAR_HEIGHT_VAR}, ${BOTTOM_BAR_HEIGHT}px) - ${PAGE_TOP_PADDING + BAR_GAP}px)`;
 
 // The tickets pane (Queue and History) is one third of the row by default (the old lg 4/12 split), never narrower than
 // the minimum, never wider than half the row. The viewer's choice is stored in px and clamped
@@ -168,9 +171,7 @@ export function Layout({ left, main, bottom }: Props) {
           bottom: 0,
           zIndex: (theme) => theme.zIndex.appBar,
           boxSizing: "border-box",
-          minHeight: { lg: BOTTOM_BAR_FALLBACK_HEIGHT },
-          maxHeight: { lg: BOTTOM_BAR_MAX_HEIGHT },
-          overflowY: { lg: "auto" },
+          height: { lg: BOTTOM_BAR_HEIGHT },
         }}
       >
         {bottom}

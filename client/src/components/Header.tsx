@@ -8,30 +8,45 @@ interface Props {
   connected: boolean;
   meName?: string;
   controls?: ReactNode;
+  // Room switches, shown on the right before the status dot. They moved out of `controls` so
+  // the left column holds only the queue selects (decision 50).
+  actions?: ReactNode;
 }
 
-export function Header({ connected, meName, controls }: Props) {
+// The standard visually-hidden clip pattern below lg, undone at lg where the title shows.
+const TITLE_SX = {
+  fontWeight: 600,
+  position: { xs: "absolute", lg: "static" },
+  width: { xs: "1px", lg: "auto" },
+  height: { xs: "1px", lg: "auto" },
+  overflow: { xs: "hidden", lg: "visible" },
+  clip: { xs: "rect(0 0 0 0)", lg: "auto" },
+  whiteSpace: "nowrap",
+  m: { xs: "-1px", lg: 0 },
+  border: 0,
+  p: 0,
+} as const;
+
+export function Header({ connected, meName, controls, actions }: Props) {
   const status = connected ? "Connected" : "Reconnecting…";
   return (
     <Box
       component="header"
       sx={{
-        // Below sm the controls need about 270px, which does not fit beside the status in one
-        // row at 320px, so the header grows to two rows (status above, controls below).
-        // From sm up it is the fixed single row. Layout only uses HEADER_HEIGHT at lg and up.
-        height: { xs: "auto", sm: HEADER_HEIGHT },
+        // One row needs about 1060px: the queue controls take 484px (three 140px selects and
+        // Refresh), the title 132px, and the switches, status dot and name about 380px, plus
+        // padding and gaps. Below lg it therefore wraps to two rows: the controls on row 1, the
+        // switches, status and name on row 2. Layout only uses HEADER_HEIGHT at lg and up, so
+        // the taller header below lg needs nothing else.
+        height: { xs: "auto", lg: HEADER_HEIGHT },
         minHeight: HEADER_HEIGHT,
         boxSizing: "border-box",
         px: 2,
-        py: { xs: 0.5, sm: 0 },
+        // 8px above and below the auto-height rows, like the fixed row, so floating labels fit.
+        py: { xs: 1, lg: 0 },
         display: "grid",
-        // Below md the title is hidden, so the controls take all the free width. From md the
-        // auto center column keeps the title centered whatever width the side columns take.
-        gridTemplateColumns: {
-          xs: "minmax(0, 1fr)",
-          sm: "minmax(0, 1fr) auto",
-          md: "1fr auto 1fr",
-        },
+        // From lg the auto center column keeps the title centered whatever width the sides take.
+        gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "1fr auto 1fr" },
         alignItems: "center",
         columnGap: 2,
         rowGap: 0.5,
@@ -41,34 +56,40 @@ export function Header({ connected, meName, controls }: Props) {
       }}
     >
       {/* minWidth 0 lets the controls shrink instead of widening the grid and pushing the title. */}
-      <Box
-        sx={{
-          minWidth: 0,
-          display: "flex",
-          alignItems: "center",
-          gridRow: { xs: 2, sm: 1 },
-        }}
-      >
-        {controls}
-      </Box>
-      <Typography
-        variant="subtitle1"
-        component="h1"
-        sx={{ fontWeight: 600, display: { xs: "none", md: "block" } }}
-      >
+      <Box sx={{ minWidth: 0, display: "flex", alignItems: "center", gridRow: 1 }}>{controls}</Box>
+      {/* Below lg the two rows leave no centered slot for the title, so it is visually hidden
+          there. Not display: none, which also hid it from screen readers and left the page with
+          no h1 below lg. */}
+      <Typography variant="subtitle1" component="h1" sx={TITLE_SX}>
         Pointing Poker
       </Typography>
       <Box
         sx={{
-          gridColumn: { xs: 1, sm: 2, md: 3 },
-          gridRow: 1,
+          gridColumn: { xs: 1, lg: 3 },
+          gridRow: { xs: 2, lg: 1 },
           minWidth: 0,
           display: "flex",
+          // At phone width the two switches and the name do not fit one line.
+          flexWrap: { xs: "wrap", lg: "nowrap" },
           alignItems: "center",
           justifyContent: "flex-end",
-          gap: 1,
+          columnGap: 1,
         }}
       >
+        {actions ? (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              columnGap: 1,
+              flexWrap: { xs: "wrap", lg: "nowrap" },
+              flexShrink: { xs: 1, lg: 0 },
+            }}
+          >
+            {actions}
+          </Box>
+        ) : null}
         <Tooltip title={status}>
           <Box
             role="img"
