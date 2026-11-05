@@ -61,9 +61,10 @@ const COLUMN_GAP = 16;
 // the summary is a short "N of M voted", so measuring only the real summary let 7 players at
 // 1440px show names while voting and drop them at the reveal, when the chart widened it. The
 // user chose (11/05/2026) that compact mode must not depend on the phase. A typical revealed
-// summary (a bar chart for 5 cards, "Avg 4.5 · Median 4.5", a "Spread 13–21" chip) measured
-// 390.4px in Chrome; this rounds it up. A wider real summary still counts at its real width.
-const SUMMARY_RESERVED_WIDTH = 400;
+// summary (bars for 5 distinct cards 2, 3, 5, 8, 13, "Avg 6.2 · Median 5", a "Spread 2–13"
+// chip) measured 366.9px in Chrome at a 1440px layout (PR follow-up, 11/05/2026); this rounds
+// it up to the next 10px. A wider real summary still counts at its real width.
+const SUMMARY_RESERVED_WIDTH = 370;
 
 // The players row, the top tier of the bottom bar. At lg it uses the deck row's 1fr auto 1fr
 // grid, so the pills sit centered over the deck, with the round summary (vote count or results)
@@ -218,6 +219,12 @@ interface PillProps {
   compact: boolean;
 }
 
+// The pill shows the username's first word ("Ana" for "Ana Lima"), so more players keep their
+// names before the row goes compact. The full username stays in the title and every aria-label.
+function shortName(username: string): string {
+  return username.trim().split(/\s+/)[0] || username;
+}
+
 function Pill({ player: p, isMe, revealed, outlier, compact }: PillProps) {
   const faceUp = revealed && p.vote !== null;
   // An offline player keeps the pill's dimming. Their card shows only face-up after reveal,
@@ -256,6 +263,7 @@ function Pill({ player: p, isMe, revealed, outlier, compact }: PillProps) {
       {compact ? null : (
         <Typography
           variant="caption"
+          title={p.username}
           sx={{
             fontSize: 13,
             maxWidth: 96,
@@ -266,7 +274,7 @@ function Pill({ player: p, isMe, revealed, outlier, compact }: PillProps) {
             fontWeight: isMe ? 700 : 400,
           }}
         >
-          {p.username}
+          {shortName(p.username)}
         </Typography>
       )}
       {p.connected || faceUp ? (

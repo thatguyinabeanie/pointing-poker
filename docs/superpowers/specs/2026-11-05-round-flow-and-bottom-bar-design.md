@@ -169,7 +169,8 @@ covers the stacked layout below `lg` and font differences.
   more lines instead of clipping or scrolling the page (PR review, 11/05/2026); only the
   fixed-height row at `lg` clips the pills. (Changed at the user's
   request on 11/05/2026; the first version had the pills left-aligned.) Each pill holds the
-  avatar, the short name and a mini card. The card is a back while voted, a dashed outline while
+  avatar, the short name (the username's first word, split on whitespace; the full username
+  stays in `title` and every `aria-label`) and a mini card. The card is a back while voted, a dashed outline while
   not voted, and the face-up value after the reveal, with outliers in the warning color, as
   today. The viewer's own pill has a bold name and the avatar ring, as today. Offline players
   stay dimmed.
@@ -178,8 +179,9 @@ covers the stacked layout below `lg` and font differences.
   `rowWidth - 2 * Math.max(summaryWidth, SUMMARY_RESERVED_WIDTH) - 2 * columnGap`, and below
   `lg` the row width. The summary is counted on both sides so the pills stay centered on the
   deck instead of drifting left (the user's request on 11/05/2026). `SUMMARY_RESERVED_WIDTH`
-  (400px) is a typical revealed summary (a 5-card chart, "Avg 4.5 · Median 4.5", a "Spread
-  13–21" chip, measured at 390.4px and rounded up). It makes compact mode the same in both
+  (370px) is a typical revealed summary (bars for 2, 3, 5, 8, 13, "Avg 6.2 · Median 5", a
+  "Spread 2–13" chip, measured at 366.9px and rounded up to the next 10px; it was 400px before
+  the PR follow-up on 11/05/2026). Measured on 11/05/2026 at a 1440px layout (row 1368px): 7 players with typical first names (Sarah, Michael, Jessica, David, Emily, James, Maria) need 774px against 596px available, so they are compact in both phases; about 5 such pills fit at 1440, and 7 keep their names from a 1620px layout (row 1548px, 776px available). It makes compact mode the same in both
   phases (the user's decision on 11/05/2026, after 7 players at 1440px showed names while
   voting and dropped them at the reveal): a team that fits keeps its names in both phases, and
   a team that does not is compact in both. The hidden copy sits in an absolutely positioned,
