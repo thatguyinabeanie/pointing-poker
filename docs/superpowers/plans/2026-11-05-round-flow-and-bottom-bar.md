@@ -404,3 +404,96 @@ separate from the white row. The user picked a tint of the epic's own color over
 - [ ] **Step 3: Gate, commit, push**
 
   The gate exits 0. Commit "Tint epic chips with their epic color" with the why. Push.
+
+---
+
+### Task 7: Ticket type filter as a shared room setting (added 11/05/2026, runs before Task 5)
+
+The user asked for a way to filter the queue by ticket type, and chose a shared room filter
+applied in the Jira query (complete results) over a per-viewer client filter. The user approved
+the design below on 11/05/2026, including moving the two room switches to the header's right side.
+
+**Files:**
+- Modify: `shared/protocol.ts` (`QueueSettings.issueTypes`, `Snapshot.issueTypes`)
+- Modify: `server/jira.ts` (`listIssueTypes`, the type condition in `searchQueue`)
+- Modify: `server/game.ts` (`GameState.issueTypes`, `createInitialState`, `setQueueSettings`, `setIssueTypes`, `viewFor`)
+- Modify: `server/ws.ts` (schema, fetch the types with the boards, refetch on change)
+- Modify: `client/src/components/QueueControls.tsx` (Type multi-select)
+- Modify: `client/src/components/Header.tsx`, `client/src/App.tsx` (switches move right)
+- Modify: `docs/superpowers/specs/2026-11-05-round-flow-and-bottom-bar-design.md` (new section 5),
+  `docs/spec/08-decision-log.md` (entry 50), `docs/spec/02-server.md`, `docs/spec/03-client.md`
+
+**Interfaces:**
+- Produces: `QueueSettings.issueTypes: string[]` (empty means all types);
+  `Snapshot.issueTypes: string[]` (the project's type names for the menu);
+  `JiraClient.listIssueTypes(projectKey: string): Promise<Result<string[]>>`;
+  `setIssueTypes(state: GameState, types: string[]): Result` in `server/game.ts`;
+  `Header` prop `actions?: ReactNode`, rendered in the right column before the status dot.
+
+- [ ] **Step 1: Protocol and room state**
+
+  - `QueueSettings` gains `issueTypes: string[]`, with a default of `[]` in `createInitialState`.
+  - `setQueueSettings` accepts it in the partial.
+  - When `projectKey` changes, `issueTypes` resets to `[]` in the same place that clears
+    `boardId`, because each project has its own types.
+  - `GameState.issueTypes: string[]` defaults to `[]`, is set by `setIssueTypes`, and is exposed
+    as `Snapshot.issueTypes` in `viewFor`.
+  - In the zod schema in `ws.ts`, add
+    `issueTypes: z.array(z.string().trim().min(1).max(64)).max(30).optional()` to the
+    `setQueueSettings` settings object.
+
+- [ ] **Step 2: Jira**
+
+  - `listIssueTypes(projectKey)` calls `GET /rest/api/3/project/{key}` and returns the
+    distinct `issueTypes[].name` values in Jira's order.
+  - It uses the existing `request`/`parseJson`/`fail` helpers and returns `jira_error` on a bad
+    shape.
+  - In `searchQueue`, when `settings.issueTypes.length > 0`, append
+    ` AND issuetype in (${settings.issueTypes.map(jqlQuote).join(", ")})` to `clause`. That is
+    one place, so it covers both the board and no-board paths. The `approximateCount` call reuses
+    `clause`, so it counts filtered tickets too.
+  - `searchTickets` (free-text search) is not filtered. Add a why-comment saying search is one
+    person's lookup and must still find any ticket.
+
+- [ ] **Step 3: Socket wiring (`ws.ts`)**
+
+  - Fetch the types wherever the boards are fetched for a project (the boards fetch and
+    `refreshProjects`). Use the same sequence and project guard so a stale project's list is
+    dropped.
+  - Apply the result with `setIssueTypes` and broadcast.
+  - If the fetch fails, keep `issueTypes` empty, log one warn line, and leave the queue
+    unfiltered. Do not send the user an error.
+  - A change to `issueTypes` refetches the queue, the same way a board change does.
+
+- [ ] **Step 4: Client**
+
+  - **Type select in `QueueControls.tsx`:**
+    - Add a small MUI `Select multiple` with the label "Type", after Board, with
+      `minWidth: 140`.
+    - Use `displayEmpty`. `renderValue` shows "All types" when the list is empty, otherwise the
+      names joined with ", " and truncated with an ellipsis.
+    - Each `MenuItem` has a `Checkbox` and the type name.
+    - Dispatch through the existing `onChangeSettings({ issueTypes })`.
+    - Disable it when disconnected or when `issueTypes` (the list) is empty.
+  - **Header switches:**
+    - Add an `actions` prop to `Header`. Move the Auto-reveal and Auto-advance
+      `FormControlLabel`s from `controls` into `actions`.
+    - Render `actions` in the right column before the status dot, with gap 1, so the left
+      column holds only Project, Board, Type and the refresh button.
+
+- [ ] **Step 5: Docs**
+
+  - Spec section "5. Ticket type filter" in the round-flow spec, summarizing Steps 1 to 4.
+  - Decision 50 ("Ticket type filter"):
+    - Why: the user wanted to narrow the queue by type.
+    - Shared and applied in JQL, so the cap applies after filtering.
+    - Empty means all types.
+    - Changing the project clears it.
+    - Search is unfiltered.
+    - The switches moved right.
+  - `02-server.md`: the settings field, `listIssueTypes`, and the JQL condition.
+  - `03-client.md`: the Type select and the Header `actions`.
+
+- [ ] **Step 6: Gate, commit, push**
+
+  The gate exits 0. Commit "Add a shared ticket type filter to the queue" with the why. Push.
