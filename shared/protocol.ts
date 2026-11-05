@@ -155,6 +155,7 @@ export interface Snapshot {
   players: PlayerView[];
   stats: {
     average: number | null;
+    median: number | null;
     min: number | null;
     max: number | null;
     counts: Record<string, number>;

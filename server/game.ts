@@ -355,13 +355,18 @@ export function summarize(players: Iterable<Player>): Stats {
     if (isNumericCard(vote)) numeric.push(Number(vote));
   }
   if (numeric.length === 0) {
-    return { average: null, min: null, max: null, counts, consensus: false };
+    return { average: null, median: null, min: null, max: null, counts, consensus: false };
   }
   const sum = numeric.reduce((a, b) => a + b, 0);
   const min = Math.min(...numeric);
   const max = Math.max(...numeric);
+  const sorted = [...numeric].sort((a, b) => a - b);
+  const mid = sorted.length / 2;
+  const medianRaw =
+    sorted.length % 2 === 1 ? sorted[Math.floor(mid)] : (sorted[mid - 1] + sorted[mid]) / 2;
   return {
     average: Math.round((sum / numeric.length) * 10) / 10,
+    median: Math.round(medianRaw * 10) / 10,
     min,
     max,
     counts,

@@ -33,7 +33,7 @@ Reference implementations already exist and have been reviewed: copy `game.ts`, 
 - `loadTicket(state, ticket: Ticket): Result`. Always ok. Same fresh-round behavior, phase `voting`.
 - `markSave(state, save: JiraSave): Result`. Any non-idle save requires phase `revealed` (reason `not_revealed`) and a ticket (reason `no_ticket`). Idle always succeeds.
 - `canSave(state, points: number): boolean`. True only when revealed, a ticket exists, and `isNumericCard(String(points))`.
-- `summarize(players: Iterable<Player>): NonNullable<Snapshot['stats']>` (average rounded to one decimal; `consensus` is min equals max over numeric votes).
+- `summarize(players: Iterable<Player>): NonNullable<Snapshot['stats']>` (average and median rounded to one decimal; `median` is the middle numeric vote, or the mean of the two middle votes on an even count, and null with no numeric votes; `consensus` is min equals max over numeric votes). `median` is on `Snapshot.stats` only, not on session history rows (decision 47).
 - Queue mutators, section 14: `setQueueSettings`, `setQueueLoading`, `setQueue`, `setProjects`, `setBoards`. All return `Result` and are always ok.
 - `viewFor(state, viewerId: number): Snapshot`. Per-recipient (`history` is the same list for every viewer): before reveal other players' `vote` is null and only `hasVoted` shows; the viewer sees their own card; players sorted by `username.localeCompare`; `stats` is null until revealed; `autoReveal` and `autoAdvance` are the same for every viewer.
 All mutators return new state objects; never mutate a state in place. The complete set of game reason strings is `not_voting`, `invalid_card`, `unknown_player`, `not_revealed`, `no_ticket`.
@@ -145,6 +145,7 @@ export interface Snapshot {
   players: PlayerView[];
   stats: {
     average: number | null;
+    median: number | null;
     min: number | null;
     max: number | null;
     counts: Record<string, number>;
