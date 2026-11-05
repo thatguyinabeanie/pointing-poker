@@ -78,15 +78,16 @@ export function TicketRowFrame({
             // plus maxWidth let a long name truncate so the key and the status badge stay visible.
             <Stack
               direction="row"
-              title={epic.name}
+              title={epic.name || epic.key}
               sx={{
                 alignItems: "center",
                 gap: 0.5,
                 minWidth: 0,
                 maxWidth: "50%",
                 px: 0.75,
-                border: 1,
-                borderColor: "divider",
+                // An inset shadow draws the outline without adding border height, so a row with
+                // a chip stays as tall as one without (a real border made it 2px taller).
+                boxShadow: (theme) => `inset 0 0 0 1px ${theme.palette.divider}`,
                 borderRadius: 1,
               }}
             >
@@ -101,7 +102,7 @@ export function TicketRowFrame({
                 }}
               />
               <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
-                {epic.name}
+                {epic.name || epic.key}
               </Typography>
             </Stack>
           ) : null}

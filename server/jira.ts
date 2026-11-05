@@ -934,32 +934,53 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       const wanted = [issueColorId, epicColorId].filter((id): id is string => id !== null);
       if (wanted.length === 0) return colors;
 
+      const chunks: string[][] = [];
       for (let i = 0; i < keys.length; i += EPIC_COLOR_CHUNK) {
-        const chunk = keys.slice(i, i + EPIC_COLOR_CHUNK);
-        // One stale or inaccessible key makes Jira reject the whole `key in (...)` chunk, so
-        // that chunk's epics stay gray. Non-fatal, by design.
-        const res = await request("POST", "/rest/api/3/search/jql", {
-          jql: `key in (${chunk.map(jqlQuote).join(", ")})`,
-          fields: wanted,
-          maxResults: chunk.length,
-        });
-        if (!res.ok) {
-          opts.logger?.debug(
-            { reason: res.reason, keys: chunk.length },
-            "jira epic colors unavailable",
-          );
-          continue;
-        }
-        const data = parseJson(res.text) as
-          | { issues?: { key?: unknown; fields?: Record<string, unknown> }[] }
-          | undefined;
-        if (!Array.isArray(data?.issues)) continue;
-        for (const issue of data.issues) {
-          if (typeof issue?.key !== "string") continue;
-          const color = pickEpicColor(issue.fields, issueColorId, epicColorId);
-          if (color) colors.set(issue.key, color);
-        }
+        chunks.push(keys.slice(i, i + EPIC_COLOR_CHUNK));
       }
+      // Chunks run concurrently so their timeouts do not add up while the queue spinner waits.
+      // bulkfetch (not `key in (...)` JQL) because JQL answers 400 for the whole list when one
+      // key is deleted or hidden; bulkfetch returns the rest and lists the bad keys in
+      // issueErrors, which only gets counted.
+      await Promise.all(
+        chunks.map(async (chunk) => {
+          const res = await request("POST", "/rest/api/3/issue/bulkfetch", {
+            issueIdsOrKeys: chunk,
+            fields: wanted,
+          });
+          if (!res.ok) {
+            opts.logger?.debug(
+              { reason: res.reason, keys: chunk.length },
+              "jira epic colors unavailable",
+            );
+            return;
+          }
+          const data = parseJson(res.text) as
+            | {
+                issues?: { key?: unknown; fields?: Record<string, unknown> }[];
+                issueErrors?: unknown;
+              }
+            | undefined;
+          if (!Array.isArray(data?.issues)) {
+            opts.logger?.debug(
+              { reason: "unreadable", keys: chunk.length },
+              "jira epic colors unavailable",
+            );
+            return;
+          }
+          if (Array.isArray(data.issueErrors) && data.issueErrors.length > 0) {
+            opts.logger?.debug(
+              { skipped: data.issueErrors.length, keys: chunk.length },
+              "jira epic colors skipped keys",
+            );
+          }
+          for (const issue of data.issues) {
+            if (typeof issue?.key !== "string") continue;
+            const color = pickEpicColor(issue.fields, issueColorId, epicColorId);
+            if (color) colors.set(issue.key, color);
+          }
+        }),
+      );
     } catch (err) {
       // Only the error name, as in request(): messages can embed request details.
       opts.logger?.debug(
