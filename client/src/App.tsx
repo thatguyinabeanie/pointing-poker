@@ -5,7 +5,7 @@ import Container from "@mui/material/Container";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DECK } from "../../shared/deck.ts";
 import type { Card, ClientCommand, QueueSettings } from "../../shared/protocol.ts";
-import { Deck } from "./components/Deck.tsx";
+import { Hand } from "./components/Hand.tsx";
 import { Header } from "./components/Header.tsx";
 import { Layout } from "./components/Layout.tsx";
 import { LeftPanel } from "./components/LeftPanel.tsx";
@@ -180,9 +180,16 @@ export function App() {
               // gap and the space above the shorter child do not block the ticket beneath.
               pointerEvents: "none",
               "& > *": { pointerEvents: "auto" },
+              // The open arc overlaps the pill's left end, so the pill fades and lets clicks
+              // through while you pick.
+              "& [data-results]": { transition: "opacity 200ms" },
+              "&:has([data-hand-open='true']) [data-results]": {
+                opacity: 0.15,
+                pointerEvents: "none",
+              },
             }}
           >
-            <Deck
+            <Hand
               deck={DECK}
               selected={selected}
               disabled={disabled || snapshot.phase === "idle"}
