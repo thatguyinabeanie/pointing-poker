@@ -66,8 +66,9 @@ export function RoundControls({
   // Layout effect so focus lands before paint, with no frame where the strip has no focus ring.
   useLayoutEffect(() => {
     const step = pendingStep.current;
-    // Any phase change uses the flag up, so a click whose phase change never came (a rejected
-    // message) cannot move focus at some later, unrelated change.
+    // Any phase change clears the flag. A click whose phase change never came (a rejected
+    // message) keeps it until the next phase change, and the body check below keeps that later
+    // change from pulling focus away from anything the viewer has moved to since.
     pendingStep.current = null;
     if (step === null) return;
     // Only when focus really fell: the browser reports body once the focused button is removed.
