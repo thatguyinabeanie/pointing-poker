@@ -7,6 +7,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { isNumericCard } from "../../../shared/deck.ts";
 import type { Phase, PlayerView } from "../../../shared/protocol.ts";
 import { initials } from "../lib/initials.ts";
+import { STRIP_HEIGHT } from "./layoutConstants.ts";
 import { RoundControls } from "./RoundControls.tsx";
 
 interface Props {
@@ -146,8 +147,8 @@ export function Players({ players, phase, meId, disabled, onReveal, onReset }: P
         alignItems: "center",
         columnGap: `${COLUMN_GAP}px`,
         rowGap: 0.5,
-        height: { lg: 52 },
-        minHeight: 52,
+        height: { lg: STRIP_HEIGHT },
+        minHeight: STRIP_HEIGHT,
         borderBottom: 1,
         borderColor: "divider",
       }}

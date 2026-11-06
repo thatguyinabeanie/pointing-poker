@@ -228,11 +228,12 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
     (e: MouseEvent) => {
       const index = indexOf((e.target as Element).closest("button"));
       if (index < 0) return;
-      // detail 0 is a click with no pointer: assistive tech. Enter and Space never get here,
-      // because the key handlers below cancel the browser's own click for them.
+      // detail 0 is a click with no pointer: a screen reader activating "Vote 5". It always
+      // picks, open or closed, or the activation would do nothing. This cannot break "a second
+      // Enter never votes": Enter and Space never make this click, because onKeyDown cancels
+      // Enter and onKeyUp cancels Space.
       if (e.detail === 0) {
-        if (openRef.current) pick(index, "keyboard");
-        else reopen();
+        pick(index, "keyboard");
         return;
       }
       const press = pressRef.current;
@@ -244,9 +245,13 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
     [indexOf, pick, reopen],
   );
 
-  const onPointerEnter = useCallback(
+  // Runs on pointermove as well as pointerenter: a mouse resting on the disabled peek when a round
+  // starts never enters again, so the first move opens it. A pick's suppression lasts until the
+  // pointer leaves, so moving over the hand after a pick still cannot reopen it (D4).
+  const onHover = useCallback(
     (e: ReactPointerEvent) => {
-      if (e.pointerType === "mouse" && !disabled && !suppressedRef.current) setOpen(true);
+      if (e.pointerType !== "mouse" || disabled) return;
+      if (!suppressedRef.current && !openRef.current) setOpen(true);
     },
     [disabled, setOpen],
   );
@@ -346,7 +351,8 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
       }
       data-hand-open={isOpen ? "true" : "false"}
       onClick={onClick}
-      onPointerEnter={onPointerEnter}
+      onPointerEnter={onHover}
+      onPointerMove={onHover}
       onPointerLeave={onPointerLeave}
       onPointerDown={onPointerDown}
       onFocus={onFocus}
@@ -361,6 +367,9 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
         width: ROOT_WIDTH,
         height: ROOT_HEIGHT,
         flex: "none",
+        // Above the faded pill, which is later in the DOM and gets its own stacking context from
+        // its opacity, so it would otherwise veil the open arc's right-end cards.
+        zIndex: 1,
         opacity: disabled ? 0.5 : 1,
         "&::before": {
           content: '""',

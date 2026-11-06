@@ -171,30 +171,9 @@ export function App() {
           </>
         }
         floating={
-          <Box
-            sx={{
-              display: "flex",
-              // Side by side, the hand, the gap and the pill need about 738px. Below md that does
-              // not fit, and between md and lg the group centers on the window with the hand at
-              // its left end, so the arc squeezed to a step of about 20px at 900px. Below lg the
-              // pill stacks above the hand, so the hand stays at the bottom edge, centered. From
-              // lg the group centers on the Ticket column, clamped inside the window.
-              flexDirection: { xs: "column-reverse", lg: "row" },
-              alignItems: { xs: "center", lg: "flex-end" },
-              gap: "20px",
-              // Layout's wrapper lets clicks through its empty space; this row must too, so the
-              // gap and the space above the shorter child do not block the ticket beneath.
-              pointerEvents: "none",
-              "& > *": { pointerEvents: "auto" },
-              // The open arc overlaps the pill's left end, so the pill fades and lets clicks
-              // through while you pick.
-              "& [data-results]": { transition: "opacity 200ms" },
-              "&:has([data-hand-open='true']) [data-results]": {
-                opacity: 0.15,
-                pointerEvents: "none",
-              },
-            }}
-          >
+          // Layout lays these out as one group (stacked or in a row) and lets clicks through
+          // the empty space around them.
+          <>
             <Hand
               deck={DECK}
               selected={selected}
@@ -214,7 +193,7 @@ export function App() {
                 onNext={onNext}
               />
             )}
-          </Box>
+          </>
         }
       />
     );

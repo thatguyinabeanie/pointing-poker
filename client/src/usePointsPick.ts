@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isNumericCard } from "../../shared/deck.ts";
-import type { Phase, Snapshot } from "../../shared/protocol.ts";
+import type { Snapshot } from "../../shared/protocol.ts";
 import { suggestPoints } from "./lib/estimate.ts";
 import { readJson, removeItem, writeJson } from "./storage.ts";
 
@@ -20,7 +20,6 @@ function readPick(): StoredPick | null {
 }
 
 interface Args {
-  phase: Phase;
   round: number;
   ticketKey: string | null;
   stats: Snapshot["stats"];
@@ -28,8 +27,9 @@ interface Args {
 }
 
 // The points shown in the results pill's select: the suggestion, or the viewer's manual pick for
-// this ticket and round.
-export function usePointsPick({ phase, round, ticketKey, stats, deck }: Args): {
+// this ticket and round. Only the pill calls it, and the pill exists only after the reveal, so
+// there is no phase to check: a pick from an earlier round fails the round check instead.
+export function usePointsPick({ round, ticketKey, stats, deck }: Args): {
   points: string;
   setManualPoints: (points: string) => void;
 } {
@@ -48,7 +48,6 @@ export function usePointsPick({ phase, round, ticketKey, stats, deck }: Args): {
   useEffect(() => {
     const isCurrent = (pick: StoredPick | null): pick is StoredPick =>
       pick !== null &&
-      phase === "revealed" &&
       pick.ticketKey === ticketKey &&
       pick.round === round &&
       deck.includes(pick.points) &&
@@ -66,7 +65,7 @@ export function usePointsPick({ phase, round, ticketKey, stats, deck }: Args): {
     manualPick.current = null;
     removeItem("session", PICK_KEY);
     setPoints(suggestion ?? "");
-  }, [phase, ticketKey, round, suggestion]);
+  }, [ticketKey, round, suggestion]);
 
   // Only a manual pick is stored; the suggestion is recomputed from stats on restore anyway.
   const setManualPoints = useCallback(

@@ -41,7 +41,6 @@ export function ResultsPill({
 }: Props) {
   const labelId = useId();
   const { points, setManualPoints } = usePointsPick({
-    phase: "revealed",
     round,
     ticketKey: ticket?.key ?? null,
     stats,

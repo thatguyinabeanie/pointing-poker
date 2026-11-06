@@ -3,7 +3,7 @@ import Container from "@mui/material/Container";
 import type { ReactNode } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { readJson, removeItem, writeJson } from "../storage.ts";
-import { HEADER_HEIGHT } from "./layoutConstants.ts";
+import { HEADER_HEIGHT, STRIP_HEIGHT } from "./layoutConstants.ts";
 import { ResizeHandle } from "./ResizeHandle.tsx";
 
 interface Props {
@@ -38,7 +38,20 @@ function validateWidth(value: unknown): number | null {
 }
 
 // Below lg the pane simply grows. At lg+ each pane scrolls on its own.
-function Pane({ label, children }: { label: string; children: ReactNode }) {
+//
+// Scroll padding: scrolling a focused element into view stops at the pane's edge, so a focused
+// link could land under the floating group at the bottom, or under a sticky header at the top
+// (`stickyTop`, the players strip in the Ticket pane), and be hidden (WCAG 2.4.11). The padding
+// makes the browser stop short of both.
+function Pane({
+  label,
+  stickyTop = 0,
+  children,
+}: {
+  label: string;
+  stickyTop?: number;
+  children: ReactNode;
+}) {
   return (
     <Box
       component="section"
@@ -50,6 +63,8 @@ function Pane({ label, children }: { label: string; children: ReactNode }) {
         // would leave a gap between them; the page container pads its end instead.
         boxSizing: "border-box",
         paddingBottom: { lg: `var(${FLOATING_HEIGHT_VAR}, 0px)` },
+        scrollPaddingBottom: { lg: `var(${FLOATING_HEIGHT_VAR}, 0px)` },
+        scrollPaddingTop: { lg: `${stickyTop}px` },
       }}
     >
       {children}
@@ -94,7 +109,11 @@ export function Layout({ left, main, floating }: Props) {
     if (!floatingBox || !column || !container) return;
     const publish = () => {
       const group = floatingBox.getBoundingClientRect();
-      container.style.setProperty(FLOATING_HEIGHT_VAR, `${Math.round(group.height)}px`);
+      const height = `${Math.round(group.height)}px`;
+      container.style.setProperty(FLOATING_HEIGHT_VAR, height);
+      // Below lg the page itself scrolls, and html cannot read the Container's variable, so the
+      // focus scroll padding (see Pane) is written to html directly.
+      document.documentElement.style.scrollPaddingBottom = height;
       const rect = column.getBoundingClientRect();
       const viewport = window.innerWidth;
       const min = group.width / 2 + FLOATING_EDGE;
@@ -112,6 +131,7 @@ export function Layout({ left, main, floating }: Props) {
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", publish);
+      document.documentElement.style.scrollPaddingBottom = "";
     };
   }, []);
 
@@ -182,7 +202,9 @@ export function Layout({ left, main, floating }: Props) {
           ref={ticketColumnRef}
           sx={{ flex: { lg: 1 }, minWidth: 0, width: { xs: "100%", lg: "auto" } }}
         >
-          <Pane label="Ticket">{main}</Pane>
+          <Pane label="Ticket" stickyTop={STRIP_HEIGHT}>
+            {main}
+          </Pane>
         </Box>
       </Box>
       <Box
@@ -194,13 +216,30 @@ export function Layout({ left, main, floating }: Props) {
           transform: "translateX(-50%)",
           zIndex: (theme) => theme.zIndex.appBar,
           // A fixed box with left and translateX(-50%) shrink-to-fits into only the space to the
-          // right of left, so a group centered far right wrapped the deck onto two rows.
+          // right of left, so a group centered far right wrapped the deck onto two rows. The cap
+          // keeps 16px on each side, so the wrapped pill below lg never touches the window edges.
           width: "max-content",
-          maxWidth: "100vw",
-          // The box spans the group's width but is mostly empty; clicks on the empty parts must
-          // reach the ticket beneath. The children opt back in.
+          maxWidth: `calc(100vw - ${2 * FLOATING_EDGE}px)`,
+          display: "flex",
+          // Side by side, the hand, the gap and the pill need about 738px. Below md that does
+          // not fit, and between md and lg the group centers on the window with the hand at its
+          // left end, so the arc squeezed to a step of about 20px at 900px. Below lg the pill
+          // stacks above the hand, so the hand stays at the bottom edge, centered. From lg the
+          // group centers on the Ticket column, clamped inside the window.
+          flexDirection: { xs: "column-reverse", lg: "row" },
+          alignItems: { xs: "center", lg: "flex-end" },
+          gap: "20px",
+          // The box spans the group's width but is mostly empty (the gap, the space above the
+          // shorter item); clicks there must reach the ticket beneath. The items opt back in.
           pointerEvents: "none",
           "& > *": { pointerEvents: "auto" },
+          // The open arc overlaps the pill's left end, so the pill fades and lets clicks through
+          // while you pick. Hand marks itself data-hand-open and ResultsPill data-results.
+          "& [data-results]": { transition: "opacity 200ms" },
+          "&:has([data-hand-open='true']) [data-results]": {
+            opacity: 0.15,
+            pointerEvents: "none",
+          },
         }}
       >
         {floating}
