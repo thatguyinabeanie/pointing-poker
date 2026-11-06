@@ -9,23 +9,14 @@ import type { Phase, Snapshot } from "../../../shared/protocol.ts";
 interface Props {
   phase: Phase;
   stats: Snapshot["stats"];
-  votedCount: number;
-  connectedCount: number;
 }
 
 const BAR_WIDTH = 16;
 const BAR_MAX_HEIGHT = 18;
 
-// The right side of the players row: the vote count while voting, the results after the reveal,
-// and nothing while idle.
-export function RoundSummary({ phase, stats, votedCount, connectedCount }: Props) {
-  if (phase === "voting") {
-    return (
-      <Typography variant="body2" sx={{ flexShrink: 0, whiteSpace: "nowrap" }}>
-        {votedCount} of {connectedCount} voted
-      </Typography>
-    );
-  }
+// The results after the reveal, and nothing in the other phases. The vote count moved to the
+// players strip's round controls.
+export function RoundSummary({ phase, stats }: Props) {
   if (phase !== "revealed" || stats === null) return null;
 
   const chip = stats.consensus ? (

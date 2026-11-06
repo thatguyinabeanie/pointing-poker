@@ -14,6 +14,7 @@ import { type Notice, NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
 import { RoomSwitch } from "./components/RoomSwitch.tsx";
+import { RoundSummary } from "./components/RoundSummary.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
 
@@ -156,15 +157,21 @@ export function App() {
             boardUrl={boardUrl}
           />
         }
-        main={<TicketView ticket={snapshot.ticket} />}
-        bottom={
-          <Box sx={{ display: "flex", flexDirection: "column" }}>
+        main={
+          <>
             <Players
               players={snapshot.players}
               phase={snapshot.phase}
               meId={me?.userId ?? null}
-              stats={snapshot.stats}
+              disabled={disabled}
+              onReveal={onReveal}
+              onReset={onReset}
             />
+            <TicketView ticket={snapshot.ticket} />
+          </>
+        }
+        bottom={
+          <Box sx={{ display: "flex", flexDirection: "column" }}>
             <Box
               sx={{
                 display: "grid",
@@ -176,10 +183,11 @@ export function App() {
                 mt: 1,
               }}
             >
-              {/* Empty left cell: the players moved to their own row above, and the cell keeps
-                  the deck centered between two equal 1fr columns. Below lg the row stacks, where
-                  an empty cell would only add a gap above the deck. */}
-              <Box sx={{ display: { xs: "none", lg: "block" } }} />
+              {/* The revealed results sit in the left cell, so the deck stays centered between two
+                  equal 1fr columns. Empty outside the reveal. */}
+              <Box sx={{ display: "flex", justifyContent: { lg: "flex-start" } }}>
+                <RoundSummary phase={snapshot.phase} stats={snapshot.stats} />
+              </Box>
               <Deck
                 deck={DECK}
                 selected={selected}
@@ -196,7 +204,6 @@ export function App() {
                   deck={DECK}
                   disabled={disabled}
                   jiraSave={snapshot.jiraSave}
-                  onReveal={onReveal}
                   onReset={onReset}
                   onSave={onSave}
                 />
