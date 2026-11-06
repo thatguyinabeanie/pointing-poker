@@ -19,9 +19,10 @@ no database, and identity comes from the headers the platform's auth proxy adds 
 The app never edits ticket text or labels, only Story Points.
 The page uses the full width in LAYOUT C: three top panes side by side. LEFT (25%) holds the queue
 and search. CENTER (42%) holds the selected ticket's description: key, summary, meta chips, and the
-Jira-rendered description. RIGHT (33%) holds the comments, oldest first. A one-row sticky bottom bar
-(88px) holds participant chips with vote status and values, the stats inline after reveal, the
-deck in the middle, and the actions on the right. The target is laptop widths only (internal tool,
+Jira-rendered description. RIGHT (33%) holds the comments, oldest first. There is no bottom bar
+(decision 51): the participants and the round buttons are a strip at the top of the ticket pane, the
+vote cards are a hand that peeks at the bottom edge of the window and fans out on hover, and after
+the reveal the same strip holds the stats, the points select, Save and Next. The target is laptop widths only (internal tool,
 MacBook Pros, inside the platform's service report iframe). There is no phone layout work. Jira's HTML for the description and comments is sanitized on
 the server before it reaches the browser.
 

@@ -5,8 +5,7 @@ import Container from "@mui/material/Container";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DECK } from "../../shared/deck.ts";
 import type { Card, ClientCommand, QueueSettings } from "../../shared/protocol.ts";
-import { ActionBar } from "./components/ActionBar.tsx";
-import { Deck } from "./components/Deck.tsx";
+import { Hand } from "./components/Hand.tsx";
 import { Header } from "./components/Header.tsx";
 import { Layout } from "./components/Layout.tsx";
 import { LeftPanel } from "./components/LeftPanel.tsx";
@@ -14,6 +13,7 @@ import { type Notice, NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
 import { RoomSwitch } from "./components/RoomSwitch.tsx";
+import { RoundResults } from "./components/RoundResults.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
 
@@ -101,6 +101,7 @@ export function App() {
       dispatch(clearTicket ? { type: "reset", clearTicket: true } : { type: "reset" }),
     [dispatch],
   );
+  const onNext = useCallback(() => onReset({ clearTicket: true }), [onReset]);
   const onSave = useCallback(
     (points: number) => dispatch({ type: "saveEstimate", points }),
     [dispatch],
@@ -156,53 +157,43 @@ export function App() {
             boardUrl={boardUrl}
           />
         }
-        main={<TicketView ticket={snapshot.ticket} />}
-        bottom={
-          <Box sx={{ display: "flex", flexDirection: "column" }}>
+        main={
+          <>
             <Players
               players={snapshot.players}
               phase={snapshot.phase}
               meId={me?.userId ?? null}
-              stats={snapshot.stats}
-            />
-            <Box
-              sx={{
-                display: "grid",
-                // The auto center column keeps the deck centered whatever width the sides take.
-                gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
-                // 8px between lg and xl gives the actions cell the room the Save spinner needs.
-                gap: { xs: 2, lg: 1, xl: 2 },
-                alignItems: "center",
-                mt: 1,
-              }}
-            >
-              {/* Empty left cell: the players moved to their own row above, and the cell keeps
-                  the deck centered between two equal 1fr columns. Below lg the row stacks, where
-                  an empty cell would only add a gap above the deck. */}
-              <Box sx={{ display: { xs: "none", lg: "block" } }} />
-              <Deck
-                deck={DECK}
-                selected={selected}
-                disabled={disabled || snapshot.phase === "idle"}
-                onSelect={onSelect}
-                onClear={onClear}
-              />
-              <Box sx={{ justifySelf: { lg: "end" } }}>
-                <ActionBar
-                  phase={snapshot.phase}
+              disabled={disabled}
+              // Shown by RoundControls only after the reveal, so it mounts (and picks its
+              // points) at each reveal.
+              results={
+                <RoundResults
                   round={snapshot.round}
                   stats={snapshot.stats}
                   ticket={snapshot.ticket}
                   deck={DECK}
                   disabled={disabled}
                   jiraSave={snapshot.jiraSave}
-                  onReveal={onReveal}
-                  onReset={onReset}
                   onSave={onSave}
+                  onNext={onNext}
                 />
-              </Box>
-            </Box>
-          </Box>
+              }
+              onReveal={onReveal}
+              onReset={onReset}
+            />
+            <TicketView ticket={snapshot.ticket} />
+          </>
+        }
+        floating={
+          <Hand
+            deck={DECK}
+            selected={selected}
+            disabled={disabled || snapshot.phase === "idle"}
+            // Offline wins over idle: a disconnected room cannot start a round either.
+            disabledHint={disabled ? "Reconnecting…" : "Start a round to vote"}
+            onSelect={onSelect}
+            onClear={onClear}
+          />
         }
       />
     );
@@ -220,6 +211,7 @@ export function App() {
               projects={snapshot.projects}
               boards={snapshot.boards}
               issueTypes={snapshot.issueTypes}
+              epics={snapshot.epics}
               disabled={disabled}
               refreshing={snapshot.queue.loading}
               onChangeSettings={onChangeSettings}

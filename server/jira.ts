@@ -24,6 +24,8 @@ export type JiraErrorReason =
   | "unreachable"
   | "no_points_field"
   | "query_too_short"
+  // The open-epics query got HTTP 400: the project has no "Epic" issue type.
+  | "no_epic_type"
   | "jira_error";
 
 export type JiraFailure = { ok: false; reason: JiraErrorReason; message: string };
@@ -36,6 +38,7 @@ export interface JiraClient {
   listProjects(): Promise<Result<JiraProject[]>>;
   listBoards(projectKey: string): Promise<Result<JiraBoard[]>>;
   listIssueTypes(projectKey: string): Promise<Result<string[]>>;
+  listEpics(settings: QueueSettings): Promise<Result<QueueEpic[]>>;
   boardType(boardId: number): Promise<Result<string>>;
   searchQueue(settings: QueueSettings): Promise<Result<QueueSection[]>>;
   searchTickets(projectKey: string | null, query: string): Promise<Result<QueueItem[]>>;
@@ -49,7 +52,7 @@ export interface JiraClientOptions {
   fetch?: typeof fetch;
   timeoutMs?: number;
   // Optional, pino-compatible. Only sizes and counts are ever passed, never ticket content.
-  logger?: { debug(obj: object, msg: string): void };
+  logger?: { debug(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -67,6 +70,14 @@ const MAX_HISTORY_REQUESTS = 10;
 const LIST_CACHE_MS = 10 * 60 * 1000;
 const MAX_PROJECTS = 500;
 const MAX_BOARDS = 500;
+// The epic list reads the parents of up to this many tickets that need points. A bigger queue
+// misses the epics of its lowest-ranked tickets, which is accepted over an unbounded scan.
+const MAX_EPIC_SCAN = 1000;
+const EPIC_SCAN_PAGE_SIZE = 100;
+// The project's open epics, listed under the queue's epics so the menu can search all of them.
+const MAX_OPEN_EPICS = 1000;
+// Cache value for an epic Jira gives no color (see epicColors).
+const NO_EPIC_COLOR = "";
 const QUEUE_PAGE_SIZE = 50;
 const MAX_SPRINTS = 50;
 const SEARCH_PAGE_SIZE = 10;
@@ -725,6 +736,126 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return { ok: true, value };
   }
 
+  // The project's open epics, key and name only, in rank order. Cached like the other lists,
+  // because it does not follow the queue (the queue's own epics are scanned on every call).
+  // The last good open-epics list per project, kept past the cache window as the fallback for a
+  // transient failure.
+  const lastOpenEpics = new Map<string, { key: string; name: string }[]>();
+
+  async function listOpenEpics(
+    projectKey: string,
+  ): Promise<Result<{ key: string; name: string }[]>> {
+    const cacheKey = `openEpics:${projectKey}`;
+    const cached = cacheGet<{ key: string; name: string }[] | "failed">(cacheKey);
+    // A project with no "Epic" type answers 400 every time, so the failure is cached for the
+    // same window: it costs one failing request and one warn per window, not one per queue fetch.
+    if (cached === "failed") {
+      return fail("no_epic_type", "Open epics are unavailable for this project.");
+    }
+    if (cached) return { ok: true, value: cached };
+
+    const jql = `project = ${jqlQuote(projectKey)} AND issuetype = Epic AND statusCategory != Done ORDER BY Rank ASC`;
+    const value: { key: string; name: string }[] = [];
+    let pageToken: string | undefined;
+    while (value.length < MAX_OPEN_EPICS) {
+      const found = await searchIssues(
+        jql,
+        Math.min(EPIC_SCAN_PAGE_SIZE, MAX_OPEN_EPICS - value.length),
+        ["summary"],
+        pageToken,
+        { badRequestReason: "no_epic_type" },
+      );
+      if (!found.ok) {
+        // Only a real 400 (no Epic type) is permanent, so only it is cached. A 5xx, timeout or
+        // 429 is transient: caching it would switch "Other open epics" off for the whole window
+        // after one blip. The warn lives here so a cached failure does not repeat it.
+        if (found.reason === "no_epic_type") cachePut(cacheKey, "failed");
+        opts.logger?.warn({ reason: found.reason, projectKey }, "jira open epics unavailable");
+        // Past its TTL the last good list is still a better menu than none, and it keeps the
+        // room's selection: listEpics would otherwise return only the queue epics and setEpics
+        // would drop every selected epic that has no ticket needing points.
+        const stale = lastOpenEpics.get(projectKey);
+        if (found.reason !== "no_epic_type" && stale) return { ok: true, value: stale };
+        return found;
+      }
+      for (const item of found.value.items) value.push({ key: item.key, name: item.summary });
+      // An empty page with a token would repeat forever, so it ends the loop too.
+      if (found.value.nextPageToken === null || found.value.items.length === 0) break;
+      pageToken = found.value.nextPageToken;
+    }
+    cachePut(cacheKey, value);
+    lastOpenEpics.set(projectKey, value);
+    return { ok: true, value };
+  }
+
+  // The Epic filter's menu: first the epics of the tickets that still need points, in the order
+  // they first appear in the queue (rank order, inQueue true), then every other open epic of the
+  // project (inQueue false, rank order). The queue epics come from a scan because CIVIS has more
+  // than 100 open epics, and the first 100 left out the epics of the queued tickets (decision 52);
+  // the open list below them is what the menu's search looks through. The Type filter applies to
+  // the scan, so the top group matches the queue; the Epic filter does not, or picking one epic
+  // would shrink the menu to that epic. The scan is not cached, because it must follow the queue.
+  async function listEpics(settings: QueueSettings): Promise<Result<QueueEpic[]>> {
+    if (settings.projectKey === null) return { ok: true, value: [] };
+    const projectKey = settings.projectKey;
+    const clause = await needsPointingClause(settings);
+    const jql = `project = ${jqlQuote(projectKey)} AND ${clause} AND parent is not EMPTY ORDER BY Rank ASC`;
+
+    // A Map keeps the first appearance of each epic. A sub-task's story parent is not an epic,
+    // so parseEpic leaves it out.
+    const epics = new Map<string, QueueEpic>();
+    let scanned = 0;
+    let pageToken: string | undefined;
+    let more = false;
+    while (scanned < MAX_EPIC_SCAN) {
+      const found = await searchIssues(
+        jql,
+        Math.min(EPIC_SCAN_PAGE_SIZE, MAX_EPIC_SCAN - scanned),
+        ["parent"],
+        pageToken,
+      );
+      if (!found.ok) return found;
+      for (const item of found.value.items) {
+        if (item.epic && !epics.has(item.epic.key)) {
+          epics.set(item.epic.key, { ...item.epic, inQueue: true });
+        }
+      }
+      scanned += found.value.items.length;
+      more = found.value.nextPageToken !== null;
+      // An empty page with a token would repeat forever, so it ends the scan too.
+      if (found.value.nextPageToken === null || found.value.items.length === 0) break;
+      pageToken = found.value.nextPageToken;
+    }
+    // A full scan with a next page means the top group is missing some epics; leave a trace.
+    if (scanned >= MAX_EPIC_SCAN && more) {
+      opts.logger?.debug({ scanned, epics: epics.size }, "jira epic scan capped");
+    }
+
+    // A project with no "Epic" issue type answers 400, and then the menu lists only the queue's
+    // epics: one warn line per cache window (logged by listOpenEpics), no error for the user.
+    // There is no open list for such a project, so a selected epic whose tickets are all pointed
+    // is not listed and the room drops it (setEpics).
+    // Any other failure with no earlier good list is returned instead: an ok list of only queue
+    // epics would make setEpics drop every selected epic without a ticket needing points, for a
+    // blip. The caller then keeps the previous list and the selection.
+    const open = await listOpenEpics(projectKey);
+    if (!open.ok && open.reason !== "no_epic_type") return open;
+    if (open.ok) {
+      for (const epic of open.value) {
+        if (!epics.has(epic.key)) {
+          epics.set(epic.key, { key: epic.key, name: epic.name, color: null, inQueue: false });
+        }
+      }
+    }
+
+    const colors = await epicColors([...epics.keys()]);
+    const value = [...epics.values()].map((epic) => ({
+      ...epic,
+      color: colors.get(epic.key) ?? null,
+    }));
+    return { ok: true, value };
+  }
+
   // The board type decides how the queue is sectioned: scrum boards have sprints, kanban
   // boards do not. Cached like the other board lookups.
   async function boardType(boardId: number): Promise<Result<string>> {
@@ -747,6 +878,26 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return `Jira board ${boardId} not found, or not visible to this account (404).`;
   }
 
+  // The queue's needs-pointing clause, shared with listEpics so the Epic menu and the queue
+  // cannot drift apart. The Type filter joins here, so the board and no-board paths, the count
+  // and the epic list all filter the same way, and the per-section cap applies after filtering
+  // (decisions 50 and 52).
+  async function needsPointingClause(settings: QueueSettings): Promise<string> {
+    // Prefer the field id (cf[NNNNN]) when we know it: it is immune to renamed or duplicate
+    // fields. Discovery failure is not fatal here, the field name works in most sites.
+    const field = await storyPointsFieldId();
+    const idMatch = field.ok ? /^customfield_(\d+)$/.exec(field.value) : null;
+    const pointsField = idMatch ? `cf[${idMatch[1]}]` : '"Story Points"';
+    // A ticket needs pointing when it is not Done and has no Story Points. Any To Do status
+    // counts (Untriaged and Backlog alike); a label filter used to hide unpointed Backlog
+    // tickets, so it was removed (decision log, 10/15/2026).
+    const typeFilter =
+      settings.issueTypes.length > 0
+        ? ` AND issuetype in (${settings.issueTypes.map(jqlQuote).join(", ")})`
+        : "";
+    return `statusCategory != Done AND ${pointsField} is EMPTY${typeFilter}`;
+  }
+
   // Sections are `Result`s all the way down: the first failed section fails the refresh, so
   // the queue is never partial.
   async function searchQueue(settings: QueueSettings): Promise<Result<QueueSection[]>> {
@@ -754,22 +905,14 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     // than "Jira is not configured", which sent people checking the env vars.
     if (settings.projectKey === null) return fail("jira_error", "No project selected.");
 
-    // Prefer the field id (cf[NNNNN]) when we know it: it is immune to renamed or duplicate
-    // fields. Discovery failure is not fatal here, the field name works in most sites.
-    const field = await storyPointsFieldId();
-    const idMatch = field.ok ? /^customfield_(\d+)$/.exec(field.value) : null;
-    const pointsField = idMatch ? `cf[${idMatch[1]}]` : '"Story Points"';
-
-    // A ticket needs pointing when it is not Done and has no Story Points. Any To Do status
-    // counts (Untriaged and Backlog alike); a label filter used to hide unpointed Backlog
-    // tickets, so it was removed (decision log, 10/15/2026).
-    // The Type filter joins the clause here, so the board and no-board paths and the count all
-    // filter the same way, and the per-section cap applies after filtering (decision 50).
-    const typeFilter =
-      settings.issueTypes.length > 0
-        ? ` AND issuetype in (${settings.issueTypes.map(jqlQuote).join(", ")})`
+    // The Epic filter is `parent in (...)`: an epic's children name it as their parent. It is
+    // added here and not in needsPointingClause, because the epic menu must not shrink to the
+    // epics already picked.
+    const epicFilter =
+      settings.epicKeys.length > 0
+        ? ` AND parent in (${settings.epicKeys.map(jqlQuote).join(", ")})`
         : "";
-    const clause = `statusCategory != Done AND ${pointsField} is EMPTY${typeFilter}`;
+    const clause = `${await needsPointingClause(settings)}${epicFilter}`;
 
     if (settings.boardId === null) {
       const found = await searchIssues(
@@ -928,7 +1071,14 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         : typeof type?.name === "string" && type.name.toLowerCase() === "epic";
     if (!isEpic) return null;
     const name = parent.fields?.summary;
-    return { key: parent.key, name: typeof name === "string" ? name : "", color: null };
+    // inQueue only means something in Snapshot.epics, where listEpics sets it. A queue row's epic
+    // cannot know the rest of the queue, so it is false here.
+    return {
+      key: parent.key,
+      name: typeof name === "string" ? name : "",
+      color: null,
+      inQueue: false,
+    };
   }
 
   function parseIssues(issues: unknown): QueueItem[] | undefined {
@@ -962,6 +1112,19 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
   async function epicColors(keys: string[]): Promise<Map<string, EpicColor>> {
     const colors = new Map<string, EpicColor>();
     if (keys.length === 0) return colors;
+    // The Epic menu lists the whole project's open epics and is rebuilt after every queue fetch,
+    // so an uncached lookup meant up to ten bulkfetch requests each time, and a 429 silently
+    // dropped the colors. Each key is cached for the list TTL, so a steady state costs no
+    // request, and only keys not seen in the window are fetched. NO_EPIC_COLOR caches "Jira has
+    // no color" too, or those epics would be refetched every time. A color changed in Jira shows
+    // up when its entry expires.
+    const missing: string[] = [];
+    for (const key of keys) {
+      const hit = cacheGet<string>(`epicColor:${key}`);
+      if (hit === null) missing.push(key);
+      else if (hit !== NO_EPIC_COLOR) colors.set(key, hit as EpicColor);
+    }
+    if (missing.length === 0) return colors;
     try {
       const fields = await listFields();
       if (!fields.ok) {
@@ -977,8 +1140,8 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       if (wanted.length === 0) return colors;
 
       const chunks: string[][] = [];
-      for (let i = 0; i < keys.length; i += EPIC_COLOR_CHUNK) {
-        chunks.push(keys.slice(i, i + EPIC_COLOR_CHUNK));
+      for (let i = 0; i < missing.length; i += EPIC_COLOR_CHUNK) {
+        chunks.push(missing.slice(i, i + EPIC_COLOR_CHUNK));
       }
       // Chunks run concurrently so their timeouts do not add up while the queue spinner waits.
       // bulkfetch (not `key in (...)` JQL) because JQL answers 400 for the whole list when one
@@ -1020,6 +1183,9 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
             if (typeof issue?.key !== "string") continue;
             const color = pickEpicColor(issue.fields, issueColorId, epicColorId);
             if (color) colors.set(issue.key, color);
+            // Only keys Jira answered for are cached: a key in issueErrors or a failed chunk is
+            // retried on the next call.
+            cachePut(`epicColor:${issue.key}`, color ?? NO_EPIC_COLOR);
           }
         }),
       );
@@ -1090,17 +1256,27 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return { ok: true, value: data.count };
   }
 
-  // /rest/api/3/search is deprecated; /search/jql pages with nextPageToken. One page is
-  // enough for a picker, so the token is ignored; `more` says whether a next page exists.
+  // /rest/api/3/search is deprecated; /search/jql pages with nextPageToken. A picker needs one
+  // page, so callers that do not pass a token get the first page and `more` says whether a next
+  // one exists. listEpics passes the token back to scan on, and asks for fewer fields.
   async function searchIssues(
     jql: string,
     maxResults: number,
-  ): Promise<Result<{ items: QueueItem[]; more: boolean }>> {
-    const res = await request("POST", "/rest/api/3/search/jql", {
-      jql,
-      fields: ["summary", "issuetype", "status", "parent"],
-      maxResults,
-    });
+    fields: string[] = ["summary", "issuetype", "status", "parent"],
+    pageToken?: string,
+    reqOpts?: RequestOptions,
+  ): Promise<Result<{ items: QueueItem[]; more: boolean; nextPageToken: string | null }>> {
+    const res = await request(
+      "POST",
+      "/rest/api/3/search/jql",
+      {
+        jql,
+        fields,
+        maxResults,
+        ...(pageToken === undefined ? {} : { nextPageToken: pageToken }),
+      },
+      reqOpts,
+    );
     if (!res.ok) return res;
 
     const data = parseJson(res.text) as { issues?: unknown; nextPageToken?: unknown } | undefined;
@@ -1108,7 +1284,8 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     if (!data || !items) {
       return fail("jira_error", "Jira returned search results in an unexpected shape.");
     }
-    return { ok: true, value: { items, more: typeof data.nextPageToken === "string" } };
+    const nextPageToken = typeof data.nextPageToken === "string" ? data.nextPageToken : null;
+    return { ok: true, value: { items, more: nextPageToken !== null, nextPageToken } };
   }
 
   async function runSearch(jql: string, maxResults: number): Promise<Result<QueueItem[]>> {
@@ -1120,8 +1297,9 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     projectKey: string | null,
     query: string,
   ): Promise<Result<QueueItem[]>> {
-    // The room's Type filter is not applied here on purpose: search is one person's lookup, and
-    // it must still find any ticket, including one of a type the queue is hiding (decision 50).
+    // The room's Type and Epic filters are not applied here on purpose: search is one person's
+    // lookup, and it must still find any ticket, including one the queue is hiding (decisions 50
+    // and 52).
     const q = query.trim();
     if (q.length < MIN_QUERY_LENGTH) {
       return fail("query_too_short", `Type at least ${MIN_QUERY_LENGTH} characters to search.`);
@@ -1154,6 +1332,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     listProjects,
     listBoards,
     listIssueTypes,
+    listEpics,
     boardType,
     searchQueue,
     searchTickets,

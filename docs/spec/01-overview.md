@@ -40,9 +40,10 @@ no observers, no room codes. Jira write-back (Story Points) is in v1.
   backoff, and keeps the last snapshot while reconnecting. `Layout.tsx` sets LAYOUT C at laptop
   widths: three top panes side by side. The queue and search sit on the left (25%), the ticket
   description in the center (42%: key, summary, meta chips, Jira-rendered description), and the
-  comments on the right (33%, oldest first). A one-row sticky bottom bar (88px) holds the
-  participant chips with vote status and values, the stats inline after reveal, the deck in the
-  middle, and the actions on the right. There is no phone layout.
+  comments on the right (33%, oldest first). There is no bottom bar (decision 51): the
+  participants and the round buttons are a strip at the top of the ticket pane, the vote cards are
+  a hand that peeks at the bottom edge and fans out on hover, and after the reveal the same strip
+  holds the stats, the points select, Save and Next. There is no phone layout.
 - Only one replica may run. Two instances would each hold their own rooms.
 
 ## Runtime components
@@ -145,13 +146,14 @@ pointing-poker/
       lib/estimate.ts         suggestPoints(stats, deck): mode of numeric votes, tie -> higher
       components/
         TopBar.tsx            AppBar: app name, Connected/Reconnecting chip, "You are {name}"
-        Layout.tsx            LAYOUT C: three top panes (25/42/33) and the one-row sticky bottom bar
+        Layout.tsx            two panes and the floating hand and pill (the original LAYOUT C had three panes and a bottom bar)
         TicketDescription.tsx Display only: key, summary, meta chips, description (sanitized HTML)
         TicketComments.tsx    Display only: comments, oldest first (sanitized HTML)
         QueuePanel.tsx        Project and board selects, queue list, search box, manual key entry (collapsed fallback)
         ParticipantChips.tsx  Chips with vote status (icon before reveal, value after), offline dimmed
-        Deck.tsx              row of Buttons, aria-pressed, click selected card = clear vote
-        ActionBar.tsx         Reveal | Reset/Next ticket | Story points Select + Save to Jira | stats
+        Players.tsx           players strip at the top of the ticket pane, with RoundControls.tsx (Reveal, Reset)
+        Hand.tsx              toolbar of 11 cards, peek at the bottom edge, arc on hover, click selected card = clear vote
+        RoundResults.tsx      after reveal, in the strip: chart, Avg and Median, chip, Points Select, Save to Jira, Next
         NoticeSnackbar.tsx    Snackbar+Alert (top center) keyed on the notice object
   server/
     index.ts                  reads env, buildApp(), listen 0.0.0.0:PORT (default 3838), SIGTERM

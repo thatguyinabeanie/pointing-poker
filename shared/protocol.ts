@@ -91,6 +91,8 @@ export interface QueueSettings {
   boardId: number | null;
   // Jira issue type names to keep in the queue. Empty means all types.
   issueTypes: string[];
+  // Issue keys of the epics to keep in the queue. Empty means all epics.
+  epicKeys: string[];
 }
 // The server maps Jira's raw color values into this fixed set, so the client never sees raw Jira values.
 export type EpicColor =
@@ -113,6 +115,9 @@ export interface QueueEpic {
   key: string;
   name: string; // the epic's summary
   color: EpicColor | null; // null: Jira has no color, or the lookup failed
+  // Only meaningful in Snapshot.epics: true when a ticket that needs points belongs to the epic.
+  // The epic on a queue row is always false, because a row cannot know the rest of the queue.
+  inQueue: boolean;
 }
 
 export interface QueueItem {
@@ -170,6 +175,8 @@ export interface Snapshot {
   boards: JiraBoard[];
   // The project's issue type names, in Jira's order, for the Type filter menu.
   issueTypes: string[];
+  // The Epic filter menu: the queue's epics first (inQueue), then the project's other open epics.
+  epics: QueueEpic[];
   // Newest first. Same list for every viewer.
   history: SessionHistoryEntry[];
   // Shared room state, same for every viewer.

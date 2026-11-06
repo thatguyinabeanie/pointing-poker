@@ -1,15 +1,29 @@
 import RefreshIcon from "@mui/icons-material/Refresh";
+import Box from "@mui/material/Box";
 import Checkbox from "@mui/material/Checkbox";
 import FormControl from "@mui/material/FormControl";
 import IconButton from "@mui/material/IconButton";
 import InputLabel from "@mui/material/InputLabel";
 import ListItemText from "@mui/material/ListItemText";
+import ListSubheader from "@mui/material/ListSubheader";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { sameNames } from "../../../shared/constants.ts";
-import type { JiraBoard, JiraProject, QueueSettings } from "../../../shared/protocol.ts";
+import TextField from "@mui/material/TextField";
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { JiraBoard, JiraProject, QueueEpic, QueueSettings } from "../../../shared/protocol.ts";
+import { epicHex } from "../lib/epicColors.ts";
+import { useRoomMultiSelect } from "../useRoomMultiSelect.ts";
 
 interface Props {
   settings: QueueSettings;
@@ -17,6 +31,8 @@ interface Props {
   boards: JiraBoard[];
   // The project's issue type names (the menu), not the selection in settings.issueTypes.
   issueTypes: string[];
+  // The Epic menu: the queue's epics first (inQueue), then the project's other open epics.
+  epics: QueueEpic[];
   disabled: boolean;
   // The old Refresh button was also disabled while the queue loaded; the caller passes that in.
   refreshing?: boolean;
@@ -28,13 +44,35 @@ interface Props {
 // header and clips it. Trimming the vertical padding gives a 32px control with room for the label.
 const SELECT_SX = { "& .MuiSelect-select": { py: 0.5 } };
 
-// Shared by Project, Board and Type. At lg the header's left column is about 500px at a 1200px
-// layout, and three selects growing to 220px with a long project or board name or a list of
-// types pushed toward the centered title, so they stop at 160px until xl. The select's own
-// nowrap and ellipsis styles truncate a longer value; its title attribute has the full text.
+// Shared by Project, Board, Type and Epic. At lg the header's left column is about 500px at a
+// 1200px layout, and selects growing to 220px with a long project or board name or a list of
+// values pushed toward the centered title, so they stop at 130px until xl. 130px was chosen to
+// fit four selects in one row and is checked in the browser; change it there if it does not fit.
+// The select's own nowrap and ellipsis styles truncate a longer value; its title attribute has
+// the full text.
 const SELECT_FORM_SX = {
   minWidth: { xs: 110, sm: 140 },
-  maxWidth: { xs: 220, lg: 160, xl: 220 },
+  maxWidth: { xs: 220, lg: 130, xl: 220 },
+} as const;
+
+// The Epic menu can be long (every open epic in the project), so it scrolls instead of running off
+// the screen.
+const EPIC_MENU_PAPER_SX = { maxHeight: 360 } as const;
+
+// Group headers scroll away with their rows. Only the search field is pinned: two sticky
+// headers at top 0 would sit on top of each other.
+const EPIC_GROUP_HEADER_SX = { lineHeight: "32px", fontSize: 12 } as const;
+
+// The search field sits in a ListSubheader, which Select treats as a child with no value, so a
+// click on it is not an option click. The opaque background keeps rows from showing through it
+// while they scroll under it.
+const EPIC_SEARCH_HEADER_SX = {
+  top: 0,
+  zIndex: 2,
+  px: 1.5,
+  py: 1,
+  bgcolor: "background.paper",
+  lineHeight: "normal",
 } as const;
 
 // An empty selection means all types, so the closed select says so instead of looking blank.
@@ -55,6 +93,7 @@ export function QueueControls({
   projects,
   boards,
   issueTypes,
+  epics,
   disabled,
   refreshing = false,
   onChangeSettings,
@@ -63,6 +102,7 @@ export function QueueControls({
   const projectLabelId = useId();
   const boardLabelId = useId();
   const typeLabelId = useId();
+  const epicLabelId = useId();
 
   // Show the stored selection only if it is a real option; MUI warns on unknown values.
   const projectValue = projects.some((p) => p.key === settings.projectKey)
@@ -82,83 +122,190 @@ export function QueueControls({
       onChangeSettings({ boardId: e.target.value === "" ? null : e.target.value }),
     [onChangeSettings],
   );
-  // The Type menu edits a local draft and sends it once, on close. Sending on every click made
-  // each click a room-wide queue refetch, and a click landing before the previous snapshot came
-  // back was computed from the stale selection and undid the earlier click.
-  // While open, typesSession remembers the room's selection and project at open, so a change
-  // someone else makes meanwhile is never overwritten by this stale draft (see onTypesClose).
-  const [typesSession, setTypesSession] = useState<{
-    atOpen: string[];
-    projectKey: string | null;
-  } | null>(null);
-  const typesOpen = typesSession !== null;
   const typesDisabled = disabled || issueTypes.length === 0;
-  const [typesDraft, setTypesDraft] = useState<string[]>([]);
-  const typesValue = typesOpen ? typesDraft : settings.issueTypes;
-  // The selection this client last sent (lastSent) and the room's selection at that moment
-  // (sentFrom). If the user closes the menu and reopens it before the server answers,
-  // settings.issueTypes is still the pre-edit selection, so using it as the baseline would make
-  // the echo look like someone else's change and silently drop the second edit. Reopening starts
-  // from lastSent instead, and the close check accepts the room matching atOpen, lastSent or
-  // sentFrom as "nobody else changed anything".
-  // Both are cleared on ANY change of the room's selection after a send, not only when it equals
-  // lastSent: the server drops type names that are not in the project's list, so its answer can
-  // differ from what was sent, and a stale lastSent would then make every later close look like
-  // someone else's edit and drop the user's edits for good. A rejected send changes nothing, so
-  // the refs stay, and sentFrom keeps the unchanged room recognizable on the next close.
-  const lastSent = useRef<string[] | null>(null);
-  const sentFrom = useRef<string[] | null>(null);
-  // The previous room selection, so the effect clears only on a real change: not on the first
-  // render and not on a re-render that carries an equal selection.
-  const prevRoomTypes = useRef(settings.issueTypes);
+  const onSendTypes = useCallback(
+    (next: string[]) => onChangeSettings({ issueTypes: next }),
+    [onChangeSettings],
+  );
+  const types = useRoomMultiSelect({
+    roomValue: settings.issueTypes,
+    resetKey: settings.projectKey,
+    disabled: typesDisabled,
+    onSend: onSendTypes,
+  });
+
+  // Enabled while a selection exists even with an empty menu: the server keeps the selection when
+  // the epic list comes back empty (a failed fetch), and a disabled select would leave the room
+  // stuck with a filter nobody can clear (final review, 11/06/2026).
+  const epicsDisabled = disabled || (epics.length === 0 && settings.epicKeys.length === 0);
+  const onSendEpics = useCallback(
+    (next: string[]) => onChangeSettings({ epicKeys: next }),
+    [onChangeSettings],
+  );
+  const epicSelect = useRoomMultiSelect({
+    roomValue: settings.epicKeys,
+    resetKey: settings.projectKey,
+    disabled: epicsDisabled,
+    onSend: onSendEpics,
+  });
+  // A key that is not in the list (a closed epic still stored in the room) shows as the key.
+  const epicNames = useMemo(() => new Map(epics.map((e) => [e.key, e.name])), [epics]);
+  const epicLabel = useCallback((key: string) => epicNames.get(key) ?? key, [epicNames]);
+
+  // The search text is local to this client and cleared on close, so it is not part of the hook's
+  // draft. Reopening starts from the full list.
+  const [epicSearch, setEpicSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const onSearchChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => setEpicSearch(e.target.value),
+    [],
+  );
+  // Keyed on `open` and not on Select's onClose: the hook also closes the menu by state (a project
+  // change, or the select turning disabled), which never calls onClose, and the old text would
+  // then be in the field at the next open.
+  const epicOpen = epicSelect.open;
   useEffect(() => {
-    if (sameNames(settings.issueTypes, prevRoomTypes.current)) return;
-    prevRoomTypes.current = settings.issueTypes;
-    lastSent.current = null;
-    sentFrom.current = null;
-  }, [settings.issueTypes]);
-  const onTypesOpen = useCallback(() => {
-    const baseline = lastSent.current ?? settings.issueTypes;
-    setTypesDraft(baseline);
-    setTypesSession({ atOpen: baseline, projectKey: settings.projectKey });
-  }, [settings.issueTypes, settings.projectKey]);
-  const onTypesChange = useCallback((e: SelectChangeEvent<string[]>) => {
-    const { value } = e.target;
-    // MUI types a multiple select's value as string | string[]; the string form only comes
-    // from browser autofill, as a comma-joined list.
-    setTypesDraft(typeof value === "string" ? value.split(",") : value);
+    if (!epicOpen) setEpicSearch("");
+  }, [epicOpen]);
+  // The field takes focus, not the first row, or the first typed letter would be type-ahead.
+  // onEntered covers a focus trap that moves focus after the field mounts. searchRef is stable,
+  // so MenuProps keeps one identity across renders.
+  const epicMenuProps = useMemo(
+    () => ({
+      autoFocus: false,
+      slotProps: {
+        paper: { sx: EPIC_MENU_PAPER_SX },
+        transition: { onEntered: () => searchRef.current?.focus() },
+      },
+    }),
+    [],
+  );
+  // Select's type-ahead and the menu's arrow handling listen for keydown on the list, which holds
+  // the field, so every key but Escape stays in the field. Escape must still reach the Modal to
+  // close the menu, and Tab to reach the Menu, which closes on it. ArrowDown is handed to the
+  // first row by hand, because the menu's arrow navigation never sees it. Rows are the elements
+  // with a data-value: Select drops that attribute from the headers.
+  const onSearchKeyDown = useCallback((e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Escape" || e.key === "Tab") return;
+    e.stopPropagation();
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      e.currentTarget.closest("ul")?.querySelector<HTMLElement>("li[data-value]")?.focus();
+    }
   }, []);
-  const onTypesClose = useCallback(() => {
-    if (typesSession === null) return;
-    setTypesSession(null);
-    // Opening and closing without a net change sends nothing, so the room does not refetch.
-    // If the room's selection changed while the menu was open (another user's edit), the draft
-    // was built on the old selection and sending it would undo that edit, so it is dropped.
-    // The room matching our own last send (lastSent) is not someone else's edit, and neither is
-    // the room still at the selection we sent from (sentFrom: the send was rejected or not yet
-    // applied), so those count as unchanged too.
-    const room = settings.issueTypes;
-    const roomUnchanged =
-      sameNames(room, typesSession.atOpen) ||
-      (lastSent.current !== null && sameNames(room, lastSent.current)) ||
-      (sentFrom.current !== null && sameNames(room, sentFrom.current));
-    if (!sameNames(typesDraft, typesSession.atOpen) && roomUnchanged) {
-      lastSent.current = typesDraft;
-      sentFrom.current = room;
-      onChangeSettings({ issueTypes: typesDraft });
-    }
-  }, [typesSession, typesDraft, settings.issueTypes, onChangeSettings]);
-  // A project change (it clears the filter and loads other types) or the select turning disabled
-  // makes the draft meaningless, so the menu closes and the draft is discarded. Closing through
-  // state does not call onClose, so nothing is sent.
-  useEffect(() => {
-    if (typesSession && (typesDisabled || settings.projectKey !== typesSession.projectKey)) {
-      setTypesSession(null);
-    }
-  }, [typesSession, typesDisabled, settings.projectKey]);
+  // ArrowUp on the first row goes back to the search field. The menu's own handling wrapped it to
+  // the last row, so the field could only be reached again by closing and reopening the menu
+  // (final review, 11/06/2026). stopPropagation keeps the menu list from also moving focus.
+  const onRowKeyDown = useCallback((e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "ArrowUp") return;
+    const first = e.currentTarget.closest("ul")?.querySelector<HTMLElement>("li[data-value]");
+    if (first !== e.currentTarget) return;
+    e.preventDefault();
+    e.stopPropagation();
+    searchRef.current?.focus();
+  }, []);
+  // Selected epics stay listed while filtering, so a hidden checked row cannot be sent by surprise.
+  // A selected key with no epic in the list (a closed epic, or the list failed to load) gets a row
+  // of its own under "Selected", or it could never be unchecked. Both the room's selection and the
+  // draft count, so unchecking such a row keeps it listed until the menu closes and sends.
+  const epicGroups = useMemo(() => {
+    const q = epicSearch.trim().toLowerCase();
+    const matches = (e: QueueEpic) =>
+      q === "" || e.name.toLowerCase().includes(q) || e.key.toLowerCase().includes(q);
+    const isShown = (e: QueueEpic) => epicSelect.value.includes(e.key) || matches(e);
+    const listed = new Set(epics.map((e) => e.key));
+    const unknown = [...new Set([...settings.epicKeys, ...epicSelect.value])].filter(
+      (key) => !listed.has(key),
+    );
+    return {
+      unknown,
+      inQueue: epics.filter((e) => e.inQueue && isShown(e)),
+      other: epics.filter((e) => !e.inQueue && isShown(e)),
+      anyMatch: epics.some(matches),
+    };
+  }, [epics, epicSearch, epicSelect.value, settings.epicKeys]);
+  // A row for an unknown key has no name or color, so it shows the key and a neutral dot.
+  const epicRow = (key: string, epic?: QueueEpic): ReactNode => (
+    <MenuItem key={key} value={key} dense onKeyDown={onRowKeyDown}>
+      <Checkbox size="small" checked={epicSelect.value.includes(key)} sx={{ p: 0.5 }} />
+      <Box
+        aria-hidden
+        sx={{
+          width: 10,
+          height: 10,
+          mr: 1,
+          flexShrink: 0,
+          borderRadius: "50%",
+          bgcolor: epic ? epicHex(epic.color) : "text.disabled",
+        }}
+      />
+      {epic ? (
+        <ListItemText primary={epic.name} secondary={epic.key} />
+      ) : (
+        <ListItemText primary={key} />
+      )}
+    </MenuItem>
+  );
+  // Select accepts an array of children, not a Fragment. Headers have no value, so a click on
+  // one selects nothing.
+  const epicMenuItems: ReactNode[] = [
+    <ListSubheader key="search" sx={EPIC_SEARCH_HEADER_SX}>
+      <TextField
+        size="small"
+        fullWidth
+        autoFocus
+        placeholder="Search epics"
+        value={epicSearch}
+        inputRef={searchRef}
+        onChange={onSearchChange}
+        onKeyDown={onSearchKeyDown}
+        slotProps={{ htmlInput: { "aria-label": "Search epics", autoComplete: "off" } }}
+      />
+    </ListSubheader>,
+  ];
+  if (epicGroups.unknown.length > 0) {
+    epicMenuItems.push(
+      <ListSubheader key="h-selected" disableSticky sx={EPIC_GROUP_HEADER_SX}>
+        Selected
+      </ListSubheader>,
+      ...epicGroups.unknown.map((key) => epicRow(key)),
+    );
+  }
+  if (epicGroups.inQueue.length > 0) {
+    epicMenuItems.push(
+      <ListSubheader key="h-queue" disableSticky sx={EPIC_GROUP_HEADER_SX}>
+        In the queue
+      </ListSubheader>,
+      ...epicGroups.inQueue.map((e) => epicRow(e.key, e)),
+    );
+  }
+  if (epicGroups.other.length > 0) {
+    epicMenuItems.push(
+      <ListSubheader key="h-other" disableSticky sx={EPIC_GROUP_HEADER_SX}>
+        Other open epics
+      </ListSubheader>,
+      ...epicGroups.other.map((e) => epicRow(e.key, e)),
+    );
+  }
+  if (!epicGroups.anyMatch && epics.length > 0) {
+    epicMenuItems.push(
+      <ListSubheader key="empty" disableSticky sx={EPIC_GROUP_HEADER_SX}>
+        No epics match
+      </ListSubheader>,
+    );
+  }
+
+  const renderEpics = useCallback(
+    (selected: string[]): string => {
+      if (selected.length === 0) return "All epics";
+      if (selected.length === 1) return epicLabel(selected[0]);
+      return `${selected.length} epics`;
+    },
+    [epicLabel],
+  );
 
   // One row from lg, where the header is a fixed 48px tall and a second line would be clipped.
-  // Below lg the header grows, and at phone width the three selects (110px each) and Refresh do
+  // Below lg the header grows, and at phone width the four selects (110px each) and Refresh do
   // not fit one line, so they wrap. useFlexGap keeps the spacing right on wrapped lines.
   return (
     <Stack
@@ -210,7 +357,7 @@ export function QueueControls({
       </FormControl>
       {/* Closed, the value is the room's stored selection, not filtered to the menu: it is what
           the server filters the queue by, so the closed select must show exactly that. Open, it
-          is the local draft (see onTypesClose). */}
+          is the local draft (see useRoomMultiSelect). */}
       <FormControl size="small" sx={SELECT_FORM_SX} disabled={typesDisabled}>
         {/* displayEmpty shows "All types" with an empty value. MUI notches the outline for
             displayEmpty but does not shrink the label, which would then sit on the text. */}
@@ -223,20 +370,46 @@ export function QueueControls({
           label="Type"
           multiple
           displayEmpty
-          value={typesValue}
-          open={typesOpen}
-          onOpen={onTypesOpen}
-          onClose={onTypesClose}
-          onChange={onTypesChange}
+          value={types.value}
+          open={types.open}
+          onOpen={types.onOpen}
+          onClose={types.onClose}
+          onChange={types.onChange}
           renderValue={renderTypes}
-          title={typesTitle(typesValue)}
+          title={typesTitle(types.value)}
         >
           {issueTypes.map((name) => (
             <MenuItem key={name} value={name} dense>
-              <Checkbox size="small" checked={typesValue.includes(name)} sx={{ p: 0.5 }} />
+              <Checkbox size="small" checked={types.value.includes(name)} sx={{ p: 0.5 }} />
               <ListItemText primary={name} />
             </MenuItem>
           ))}
+        </Select>
+      </FormControl>
+      {/* Same structure as Type. An empty selection means all epics. A key in the room's
+          selection that is not in the menu still shows, by its key. */}
+      <FormControl size="small" sx={SELECT_FORM_SX} disabled={epicsDisabled}>
+        <InputLabel id={epicLabelId} shrink>
+          Epic
+        </InputLabel>
+        <Select<string[]>
+          sx={SELECT_SX}
+          labelId={epicLabelId}
+          label="Epic"
+          multiple
+          displayEmpty
+          value={epicSelect.value}
+          open={epicSelect.open}
+          onOpen={epicSelect.onOpen}
+          onClose={epicSelect.onClose}
+          onChange={epicSelect.onChange}
+          renderValue={renderEpics}
+          title={
+            epicSelect.value.length === 0 ? "All epics" : epicSelect.value.map(epicLabel).join(", ")
+          }
+          MenuProps={epicMenuProps}
+        >
+          {epicMenuItems}
         </Select>
       </FormControl>
       <IconButton

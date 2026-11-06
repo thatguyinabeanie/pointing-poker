@@ -27,6 +27,7 @@ function unconfiguredJira(): JiraClient {
     listProjects: fail,
     listBoards: fail,
     listIssueTypes: fail,
+    listEpics: fail,
     boardType: fail,
     searchQueue: fail,
     searchTickets: fail,

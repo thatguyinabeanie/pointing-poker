@@ -1,6 +1,7 @@
 import Box from "@mui/material/Box";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { RESIZE_HANDLE_MARGIN, RESIZE_HANDLE_WIDTH } from "./layoutConstants.ts";
 
 // Arrow keys move the divider by this many px, matching the brief.
 const KEY_STEP = 16;
@@ -123,8 +124,8 @@ export function ResizeHandle({ width, min, max, rowWidth, onPreview, onCommit, o
       sx={{
         position: "relative",
         flex: "none",
-        width: 9,
-        mx: 0.5,
+        width: RESIZE_HANDLE_WIDTH,
+        mx: `${RESIZE_HANDLE_MARGIN}px`,
         cursor: "col-resize",
         // Without this the browser claims horizontal touch moves for scrolling and cancels the drag.
         touchAction: "none",

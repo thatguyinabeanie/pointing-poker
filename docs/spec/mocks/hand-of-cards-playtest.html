@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Playtest: peek and arc</title>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { --navy:#215470; --night:#0A2138; --gray:#4B5563; --amber:#F1A137; --line:#E5E7EB; --bg:#F6F7F9;
+          --dx:52px; --dy:2.2px; --rot:5deg; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Lato, Roboto, Helvetica, Arial, sans-serif; background:var(--bg); color:var(--night); }
+  .page { max-width:1240px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; } .sub { color:var(--gray); margin:0 0 14px; line-height:1.5; }
+  .try { display:flex; flex-wrap:wrap; gap:6px 18px; font-size:13px; color:var(--gray); margin:0 0 16px; padding:0; list-style:none; }
+  .try li::before { content:"☐ "; color:var(--navy); }
+  kbd { border:1px solid #c9ced6; border-bottom-width:2px; border-radius:4px; padding:0 5px; font-size:12px; background:#fff; }
+
+  .app { position:relative; height:640px; display:flex; flex-direction:column; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .hdr { height:44px; display:flex; align-items:center; gap:8px; padding:0 16px; border-bottom:1px solid var(--line); font-size:13px; }
+  .sel { border:1px solid #c9ced6; border-radius:4px; padding:3px 8px; } .hdr .title { margin:0 auto; font-weight:700; font-size:15px; }
+  .body { flex:1; display:flex; min-height:0; }
+  .queue { width:32%; border-right:1px solid var(--line); padding:10px 12px; font-size:12px; overflow:hidden; }
+  .row { padding:6px 4px; border-bottom:1px solid var(--line); border-left:3px solid transparent; }
+  .row.cur { border-left-color:var(--navy); background:#eef3f6; }
+  .row.done { opacity:.45; }
+  .key { color:var(--navy); font-weight:700; text-decoration:underline; }
+  .chip { display:inline-block; font-size:10px; border-radius:4px; padding:0 5px; background:#fbefd9; border:1px solid #e9c27f; margin-left:4px; }
+  .ticket { flex:1; padding:0 22px; font-size:13px; overflow:auto; padding-bottom:110px; }
+  .players { display:flex; align-items:center; gap:10px; height:52px; border-bottom:1px solid var(--line); position:sticky; top:0; background:#fff; z-index:5; }
+  .pill { display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:999px; padding:2px 10px 2px 2px; font-size:12px; }
+  .pill.me { border-color:#b9cad6; }
+  .av { width:26px; height:26px; border-radius:50%; background:#c9d6df; display:grid; place-items:center; font-size:10px; font-weight:700; }
+  .mini { min-width:18px; height:22px; padding:0 3px; border:1px dashed #9aa3ad; border-radius:3px; font-size:11px; font-weight:700; display:grid; place-items:center; color:transparent; }
+  .mini.voted { background:var(--navy); border:1px solid var(--navy); }
+  .app.revealed .mini.voted { background:#fff; color:var(--navy); }
+  .status { margin-left:auto; color:var(--gray); font-size:12px; }
+  .btn { border-radius:6px; padding:5px 14px; font:inherit; font-size:13px; cursor:pointer; border:1px solid var(--navy); background:#fff; color:var(--navy); }
+  .btn:disabled { opacity:.4; cursor:default; }
+  .btn.primary { background:var(--navy); color:#fff; } .btn.save { background:var(--amber); border-color:var(--amber); color:var(--night); font-weight:700; }
+  .ticket h3 { font-size:16px; margin:16px 0 8px; } .meta { display:flex; gap:28px; color:var(--gray); margin-bottom:12px; }
+  .text { color:var(--gray); line-height:1.65; } .text p { margin:0 0 10px; }
+
+  /* Bottom-center group: the hand, plus the results pill after the reveal. */
+  .dock { position:absolute; left:50%; bottom:0; transform:translateX(-50%); display:flex; align-items:flex-end; gap:20px; z-index:30; pointer-events:none; }
+  .dock > * { pointer-events:auto; }
+
+  .results { display:none; align-items:center; gap:14px; margin-bottom:16px; background:#fff; border:1px solid var(--line); border-radius:14px;
+    box-shadow:0 8px 24px rgba(10,33,56,.18); padding:8px 10px 8px 14px; white-space:nowrap; font-size:13px; }
+  .app.revealed .results { display:flex; }
+  /* The open arc overlaps the pill's left end, so the pill fades while you pick. */
+  .results { transition:opacity .2s; }
+  .dock:has(.hand.open) .results { opacity:.15; pointer-events:none; }
+  .bars { display:flex; align-items:flex-end; gap:4px; height:36px; padding-bottom:12px; }
+  .bars div { width:20px; background:var(--navy); border-radius:3px 3px 0 0; position:relative; transition:height .25s; }
+  .bars div span { position:absolute; bottom:-14px; left:-4px; right:-4px; text-align:center; font-size:10px; color:var(--gray); }
+  .stat b { font-size:15px; }
+  .verdict { border-radius:999px; padding:2px 10px; font-size:12px; }
+  .verdict.split { background:#fdf1e7; color:#B14A1B; } .verdict.cons { background:#e6f0e4; color:#32522E; } .verdict.none { background:#eef0f3; color:var(--gray); }
+  select.pts { font:inherit; font-size:13px; padding:4px 6px; border:1px solid #c9ced6; border-radius:4px; }
+
+  /* ---------- the hand ---------- */
+  .hand { position:relative; width:120px; height:44px; outline:none; }
+  .hand:focus-visible { box-shadow:0 0 0 2px var(--amber) inset; border-radius:8px; }
+  /* Invisible hover zone that grows with the arc, so moving up onto a card keeps it open. */
+  .hand::before { content:""; position:absolute; left:-20px; right:-20px; bottom:0; height:44px; }
+  .hand.open::before { left:-330px; right:-330px; height:200px; }
+  .card { position:absolute; left:50%; bottom:-34px; width:46px; height:64px; margin-left:-23px;
+    border:1px solid #b8c0ca; border-radius:6px; background:#fff; display:grid; place-items:start center; padding-top:5px;
+    font-weight:700; font-size:13px; box-shadow:0 2px 6px rgba(10,33,56,.18); cursor:pointer; outline:none; user-select:none;
+    transform:translateX(calc(var(--i) * 11px)) translateY(calc(var(--i2) * 0.4px)) rotate(calc(var(--i) * 4deg));
+    transition:transform .3s cubic-bezier(.2,.8,.3,1.15), bottom .3s, font-size .2s, padding .2s, background .15s;
+    transition-delay:calc((var(--i) + 5) * 10ms); }
+  .card.picked { background:var(--navy); color:#fff; border-color:var(--navy); bottom:-16px; z-index:2; }
+  .hand.open .card { bottom:calc(20px + 25 * var(--dy));
+    transform:translateX(calc(var(--i) * var(--dx))) translateY(calc(var(--i2) * var(--dy))) rotate(calc(var(--i) * var(--rot)));
+    place-items:center; padding-top:0; font-size:18px; }
+  .hand.open .card:hover, .hand.open .card:focus { bottom:calc(32px + 25 * var(--dy)); border-color:var(--navy); box-shadow:0 8px 18px rgba(33,84,112,.35); }
+  .hand.open .card:focus { box-shadow:0 0 0 3px var(--amber), 0 8px 18px rgba(33,84,112,.35); }
+  .hand.open .card.picked { bottom:calc(28px + 25 * var(--dy)); }
+  .hand.idle .card { cursor:default; opacity:.5; }
+  .hint { position:absolute; left:50%; bottom:4px; transform:translateX(-50%); font-size:10px; color:var(--gray); white-space:nowrap; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .hand.open .hint { opacity:1; }
+
+  .toast { position:absolute; right:16px; bottom:16px; background:var(--night); color:#fff; padding:10px 14px; border-radius:8px; font-size:13px;
+    opacity:0; transform:translateY(8px); transition:opacity .2s, transform .2s; z-index:40; pointer-events:none; }
+  .toast.show { opacity:1; transform:none; }
+  .log { margin-top:10px; font-size:12px; color:var(--gray); min-height:18px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Playtest: peek at rest, arc on hover</h1>
+  <p class="sub">Everything here works. Alex and Casey vote a few seconds after each new round. Nothing is saved anywhere, so play freely.</p>
+  <ul class="try">
+    <li>Hover the hand and vote</li>
+    <li>Click your card again to take the vote back</li>
+    <li>Reveal, then change your vote</li>
+    <li>Points, Save, Next</li>
+    <li>Keyboard: <kbd>Tab</kbd> to the hand, <kbd>←</kbd><kbd>→</kbd>, <kbd>Enter</kbd>, <kbd>Esc</kbd></li>
+  </ul>
+
+  <div class="app" id="app">
+    <div class="hdr"><span class="sel">CIVIS ▾</span><span class="sel">Onyx Scrum ▾</span><span class="sel">All types ▾</span><span class="title">Pointing Poker</span><span>Auto-reveal ○ Auto-advance ○</span></div>
+    <div class="body">
+      <div class="queue" id="queue"></div>
+      <div class="ticket">
+        <div class="players">
+          <div class="pill me"><span class="av">GM</span>gmendoza<span class="mini" data-p="me"></span></div>
+          <div class="pill"><span class="av">AB</span>alex<span class="mini" data-p="alex"></span></div>
+          <div class="pill"><span class="av">CD</span>casey<span class="mini" data-p="casey"></span></div>
+          <span class="status" id="status"></span>
+          <button class="btn primary" id="reveal">Reveal</button><button class="btn" id="reset">Reset</button>
+        </div>
+        <h3 id="title"></h3>
+        <div class="meta"><span>Status: Backlog</span><span>Priority: Medium</span><span>Assignee: Unassigned</span></div>
+        <div class="text" id="desc"></div>
+      </div>
+    </div>
+    <div class="dock">
+      <div class="hand" id="hand" tabindex="0" aria-label="Your cards. Arrow keys to choose, Enter to vote."><span class="hint">← → to move · Enter to vote · Esc to close</span></div>
+      <div class="results" id="results">
+        <div class="bars" id="bars"></div>
+        <span class="stat" id="stat"></span>
+        <span class="verdict" id="verdict"></span>
+        <select class="pts" id="pts" aria-label="Points"></select>
+        <button class="btn save" id="save">Save</button><button class="btn" id="next">Next</button>
+      </div>
+    </div>
+    <div class="toast" id="toast"></div>
+  </div>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+  const DECK = ["0","0.5","1","2","3","5","8","13","21","?","☕"];
+  const TICKETS = [
+    { key:"CIVIS-13928", epic:"AWS Quick Sight", title:"Add LIST table/quick_data_sets endpoint",
+      desc:"<p>We want to be able to find data sets associated with a given table. This will let us list datasets from the table detail page.</p><p><b>databases/:/schemas/:/tables/:/quick_data_sets</b></p><p>• feature flagged<br>• return array of dataset summaries<br>&nbsp;&nbsp;◦ should include rh id, credential, custom sql if it exists.</p>",
+      others:{ alex:"5", casey:"3" } },
+    { key:"CIVIS-14375", epic:"AWS Quick Sight", title:"API: Delete dataset endpoint",
+      desc:"<p>Expose DELETE for a Quick Sight dataset. Removes the dataset in AWS and the local record.</p><p>• 404 when the dataset is gone already<br>• audit log entry</p>",
+      others:{ alex:"3", casey:"3" } },
+    { key:"CIVIS-14833", epic:null, title:"Track Quick usage",
+      desc:"<p>Count dashboard opens per org so we can see adoption.</p>", others:{ alex:"8", casey:"?" } },
+    { key:"CIVIS-14634", epic:null, title:"RedshiftConnection#columns never detects views",
+      desc:"<p>Regressed in CIVP-23112. Views come back with no columns.</p>", others:{ alex:"2", casey:"3" } },
+  ];
+  const $ = (id) => document.getElementById(id);
+  const app = $("app"), hand = $("hand");
+  const s = { t:0, phase:"voting", votes:{}, saved:{}, timers:[], suppress:false, focusIdx:5 };
+
+  // ---------- queue + ticket ----------
+  function renderTicket() {
+    const t = TICKETS[s.t];
+    $("title").textContent = `☑ Task ${t.key} · ${t.title}`;
+    $("desc").innerHTML = t.desc;
+    $("queue").innerHTML = TICKETS.map((x, i) =>
+      `<div class="row ${i === s.t ? "cur" : ""} ${s.saved[x.key] ? "done" : ""}"><span class="key">${x.key}</span>` +
+      `${x.epic ? `<span class="chip">${x.epic}</span>` : ""}${s.saved[x.key] ? ` · ${s.saved[x.key]} pts` : ""}<br>${x.title}</div>`).join("");
+  }
+
+  // ---------- round ----------
+  function newRound() {
+    s.timers.forEach(clearTimeout);
+    s.phase = "voting"; s.votes = {};
+    // Teammates vote after a short, slightly different delay so the room feels live.
+    const t = TICKETS[s.t];
+    s.timers = [
+      setTimeout(() => { s.votes.alex = t.others.alex; render(); }, 1400),
+      setTimeout(() => { s.votes.casey = t.others.casey; render(); }, 2900),
+    ];
+    renderTicket(); render();
+  }
+
+  function vote(v) {
+    if (s.phase === "idle") return;
+    // Same card again withdraws the vote, as it does in the app today.
+    if (s.votes.me === v) delete s.votes.me; else s.votes.me = v;
+    log(s.votes.me ? `You voted ${s.votes.me}` : "You took your vote back");
+    render();
+  }
+
+  function render() {
+    app.classList.toggle("revealed", s.phase === "revealed");
+    document.querySelectorAll(".mini").forEach((m) => {
+      const v = s.votes[m.dataset.p];
+      m.classList.toggle("voted", v !== undefined);
+      m.textContent = v ?? "";
+    });
+    const n = Object.keys(s.votes).length;
+    $("status").textContent = s.phase === "revealed" ? "Revealed" : `${n} of 3 voted`;
+    $("reveal").style.display = s.phase === "revealed" ? "none" : "";
+    $("reveal").disabled = n === 0;
+    hand.querySelectorAll(".card").forEach((c) => c.classList.toggle("picked", c.dataset.v === s.votes.me));
+    if (s.phase === "revealed") renderResults();
+  }
+
+  function renderResults() {
+    const vals = Object.values(s.votes);
+    const counts = {}; vals.forEach((v) => (counts[v] = (counts[v] || 0) + 1));
+    const max = Math.max(1, ...Object.values(counts));
+    $("bars").innerHTML = DECK.filter((c) => counts[c]).map((c) =>
+      `<div style="height:${8 + (counts[c] / max) * 18}px" title="${counts[c]} × ${c}"><span>${c}</span></div>`).join("");
+    const nums = vals.filter((v) => !isNaN(parseFloat(v))).map(Number).sort((a, b) => a - b);
+    if (nums.length === 0) {
+      $("stat").innerHTML = "No numeric votes";
+      $("verdict").className = "verdict none"; $("verdict").textContent = "Discuss";
+    } else {
+      const avg = Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 10) / 10;
+      const m = nums.length % 2 ? nums[(nums.length - 1) / 2] : Math.round(((nums[nums.length / 2 - 1] + nums[nums.length / 2]) / 2) * 10) / 10;
+      $("stat").innerHTML = `Avg <b>${avg}</b> · Median <b>${m}</b>`;
+      const lo = nums[0], hi = nums[nums.length - 1];
+      $("verdict").className = lo === hi ? "verdict cons" : "verdict split";
+      $("verdict").textContent = lo === hi ? "Consensus" : `Spread ${lo}–${hi}`;
+    }
+    // Points follows the most common numeric vote. A tie goes to the card closest to the median,
+    // so 3 / 5 / 13 suggests 5 rather than the outlier.
+    const numeric = DECK.filter((c) => !isNaN(parseFloat(c)));
+    const med = nums.length ? nums[Math.floor((nums.length - 1) / 2)] : 0;
+    const best = numeric.filter((c) => counts[c])
+      .sort((a, b) => counts[b] - counts[a] || Math.abs(Number(a) - med) - Math.abs(Number(b) - med))[0];
+    $("pts").innerHTML = numeric.map((c) => `<option ${c === best ? "selected" : ""}>${c}</option>`).join("");
+  }
+
+  // ---------- the hand: open, close, keyboard ----------
+  const mid = (DECK.length - 1) / 2;
+  DECK.forEach((v, i) => {
+    const c = document.createElement("div");
+    c.className = "card"; c.textContent = v; c.dataset.v = v; c.tabIndex = -1;
+    c.setAttribute("role", "button"); c.setAttribute("aria-label", `Vote ${v === "☕" ? "coffee break" : v}`);
+    c.style.setProperty("--i", i - mid); c.style.setProperty("--i2", (i - mid) ** 2);
+    c.addEventListener("click", () => { if (hand.classList.contains("open")) pick(v, false); });
+    hand.appendChild(c);
+  });
+  const cards = () => [...hand.querySelectorAll(".card")];
+
+  function open() { if (!s.suppress) hand.classList.add("open"); }
+  function close() { hand.classList.remove("open"); }
+  // Decision: the hand closes right after a pick, even with the mouse still over it.
+  // It reopens once the mouse leaves and comes back, or on the next keyboard focus.
+  function pick(v, viaKeyboard) {
+    vote(v); close(); s.suppress = true;
+    // A mouse click focuses the card itself, so blur whatever holds focus, not just the hand.
+    if (viaKeyboard) hand.focus(); else document.activeElement.blur();
+  }
+  hand.addEventListener("mouseenter", open);
+  hand.addEventListener("mouseleave", () => { s.suppress = false; if (!hand.contains(document.activeElement)) close(); });
+  hand.addEventListener("focus", () => {
+    if (s.suppress) return;
+    open();
+    const i = DECK.indexOf(s.votes.me); s.focusIdx = i >= 0 ? i : 5;
+    cards()[s.focusIdx].focus();
+  });
+  hand.addEventListener("focusout", (e) => { if (!hand.contains(e.relatedTarget)) { close(); s.suppress = false; } });
+  hand.addEventListener("keydown", (e) => {
+    if (!hand.classList.contains("open")) {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowUp") { e.preventDefault(); s.suppress = false; hand.dispatchEvent(new Event("focus")); }
+      return;
+    }
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      s.focusIdx = Math.max(0, Math.min(DECK.length - 1, s.focusIdx + (e.key === "ArrowRight" ? 1 : -1)));
+      cards()[s.focusIdx].focus();
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault(); pick(DECK[s.focusIdx], true);
+    } else if (e.key === "Escape") {
+      e.preventDefault(); close(); s.suppress = true; hand.focus();
+    }
+  });
+
+  // ---------- buttons ----------
+  $("reveal").onclick = () => { s.timers.forEach(clearTimeout); s.phase = "revealed"; log("Revealed"); render(); };
+  $("reset").onclick = () => { log("Reset: new round on the same ticket"); newRound(); };
+  $("save").onclick = () => {
+    const t = TICKETS[s.t]; s.saved[t.key] = $("pts").value;
+    toast(`Saved ${$("pts").value} pts to ${t.key}`); renderTicket();
+  };
+  $("next").onclick = () => { s.t = (s.t + 1) % TICKETS.length; log(`Next ticket: ${TICKETS[s.t].key}`); newRound(); };
+
+  function toast(msg) { const el = $("toast"); el.textContent = msg; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2200); }
+  function log(msg) { $("log").textContent = msg; }
+
+  newRound();
+</script>
+</body>
+</html>
