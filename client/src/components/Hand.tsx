@@ -86,8 +86,12 @@ const CARD_SX: SxProps<Theme> = (theme) => {
       bgcolor: "primary.main",
       color: "primary.contrastText",
       borderColor: "primary.main",
-      zIndex: 2,
     },
+    // Raised only in the closed peek, so your vote shows above its neighbors. Open, the arc's
+    // deck-order stacking must hold: the value padding assumes each later card covers the one
+    // before, and a raised vote would cover the next card's value when the arc narrows (PR #9
+    // review). Hover and focus still win with zIndex 3, since the card you point at comes forward.
+    "[data-hand-open='false'] &[aria-pressed='true']": { zIndex: 2 },
     "&:disabled": { cursor: "default" },
     "[data-hand-open='true'] &": { placeItems: "center", paddingTop: 0, fontSize: 18 },
     "[data-hand-open='true'] &:focus-visible": lifted,
@@ -125,7 +129,10 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
   // A tap on the peek must open without voting, so a click needs the state from before the press.
   const pressRef = useRef({ type: "mouse", wasOpen: false });
   const [focusIndex, setFocusIndex] = useState<number | null>(null);
-  const [step, setStep] = useState(() => fitStep(availableWidth(null), deck.length));
+  // The measured room, not the step: the zone's clamp needs it, and the step is capped at wide
+  // widths, where it no longer says how much room there is.
+  const [available, setAvailable] = useState(() => availableWidth(null));
+  const step = fitStep(available, deck.length);
 
   // The card buttons in deck order, or -1 for anything else (the hover zone, the hint).
   const cards = useCallback(
@@ -147,10 +154,7 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
     setOpen(true);
   }, [disabled, setOpen]);
 
-  const measureStep = useCallback(
-    () => setStep(fitStep(availableWidth(rootRef.current), deck.length)),
-    [deck.length],
-  );
+  const measureStep = useCallback(() => setAvailable(availableWidth(rootRef.current)), []);
   // The hand moves without a window resize when the pill appears or goes (the floating row changes
   // size), for example a reveal from another tab while the arc is open. Layout re-centers the
   // group from its own observer, so the measure waits a frame for that to land. A drag of the
@@ -336,7 +340,16 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
   const tabStop = focusIndex ?? (selectedIndex >= 0 ? selectedIndex : Math.floor(middle));
   const rise = openLift(deck.length, step) - REST_BOTTOM;
   // The zone grows with the arc so moving up from the peek to an end card never leaves it.
-  const zoneSide = isOpen ? ROOT_WIDTH / 2 - (middle * step + ZONE_SIDE_MARGIN) : -20;
+  // The margin is clamped so the zone never reaches past the room measured for the arc (half the
+  // available width plus the 16px kept on each side). An invisible zone past the window edge does
+  // nothing for the mouse, and in some engines it adds horizontal scroll (PR #9 review). It stays
+  // at least half a card wider than the end cards' centers, so the mouse moving onto an end card
+  // still holds the arc open.
+  const zoneMargin = Math.max(
+    CARD_WIDTH / 2,
+    Math.min(ZONE_SIDE_MARGIN, available / 2 + 16 - middle * step),
+  );
+  const zoneSide = isOpen ? ROOT_WIDTH / 2 - (middle * step + zoneMargin) : -20;
   const zoneHeight = isOpen ? openLift(deck.length, step) + CARD_HEIGHT + 60 : ROOT_HEIGHT;
   // When the arc narrows, the next card covers the right of each card; center the value in the
   // part that still shows.
