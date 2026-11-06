@@ -1,4 +1,5 @@
 import RefreshIcon from "@mui/icons-material/Refresh";
+import Box from "@mui/material/Box";
 import Checkbox from "@mui/material/Checkbox";
 import FormControl from "@mui/material/FormControl";
 import IconButton from "@mui/material/IconButton";
@@ -7,9 +8,10 @@ import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { sameNames } from "../../../shared/constants.ts";
-import type { JiraBoard, JiraProject, QueueSettings } from "../../../shared/protocol.ts";
+import { useCallback, useId, useMemo } from "react";
+import type { JiraBoard, JiraProject, QueueEpic, QueueSettings } from "../../../shared/protocol.ts";
+import { epicHex } from "../lib/epicColors.ts";
+import { useRoomMultiSelect } from "../useRoomMultiSelect.ts";
 
 interface Props {
   settings: QueueSettings;
@@ -17,6 +19,8 @@ interface Props {
   boards: JiraBoard[];
   // The project's issue type names (the menu), not the selection in settings.issueTypes.
   issueTypes: string[];
+  // The project's open epics, the Epic menu.
+  epics: QueueEpic[];
   disabled: boolean;
   // The old Refresh button was also disabled while the queue loaded; the caller passes that in.
   refreshing?: boolean;
@@ -28,14 +32,20 @@ interface Props {
 // header and clips it. Trimming the vertical padding gives a 32px control with room for the label.
 const SELECT_SX = { "& .MuiSelect-select": { py: 0.5 } };
 
-// Shared by Project, Board and Type. At lg the header's left column is about 500px at a 1200px
-// layout, and three selects growing to 220px with a long project or board name or a list of
-// types pushed toward the centered title, so they stop at 160px until xl. The select's own
-// nowrap and ellipsis styles truncate a longer value; its title attribute has the full text.
+// Shared by Project, Board, Type and Epic. At lg the header's left column is about 500px at a
+// 1200px layout, and selects growing to 220px with a long project or board name or a list of
+// values pushed toward the centered title, so they stop at 130px until xl. 130px was chosen to
+// fit four selects in one row and is checked in the browser; change it there if it does not fit.
+// The select's own nowrap and ellipsis styles truncate a longer value; its title attribute has
+// the full text.
 const SELECT_FORM_SX = {
   minWidth: { xs: 110, sm: 140 },
-  maxWidth: { xs: 220, lg: 160, xl: 220 },
+  maxWidth: { xs: 220, lg: 130, xl: 220 },
 } as const;
+
+// The Epic menu can list up to 100 epics (MAX_EPICS on the server), so it scrolls instead of
+// running off the screen.
+const EPIC_MENU_PROPS = { slotProps: { paper: { sx: { maxHeight: 360 } } } } as const;
 
 // An empty selection means all types, so the closed select says so instead of looking blank.
 // Two or more show a count: the joined names ("Story, Bug") were the widest value in the header.
@@ -55,6 +65,7 @@ export function QueueControls({
   projects,
   boards,
   issueTypes,
+  epics,
   disabled,
   refreshing = false,
   onChangeSettings,
@@ -63,6 +74,7 @@ export function QueueControls({
   const projectLabelId = useId();
   const boardLabelId = useId();
   const typeLabelId = useId();
+  const epicLabelId = useId();
 
   // Show the stored selection only if it is a real option; MUI warns on unknown values.
   const projectValue = projects.some((p) => p.key === settings.projectKey)
@@ -82,83 +94,43 @@ export function QueueControls({
       onChangeSettings({ boardId: e.target.value === "" ? null : e.target.value }),
     [onChangeSettings],
   );
-  // The Type menu edits a local draft and sends it once, on close. Sending on every click made
-  // each click a room-wide queue refetch, and a click landing before the previous snapshot came
-  // back was computed from the stale selection and undid the earlier click.
-  // While open, typesSession remembers the room's selection and project at open, so a change
-  // someone else makes meanwhile is never overwritten by this stale draft (see onTypesClose).
-  const [typesSession, setTypesSession] = useState<{
-    atOpen: string[];
-    projectKey: string | null;
-  } | null>(null);
-  const typesOpen = typesSession !== null;
   const typesDisabled = disabled || issueTypes.length === 0;
-  const [typesDraft, setTypesDraft] = useState<string[]>([]);
-  const typesValue = typesOpen ? typesDraft : settings.issueTypes;
-  // The selection this client last sent (lastSent) and the room's selection at that moment
-  // (sentFrom). If the user closes the menu and reopens it before the server answers,
-  // settings.issueTypes is still the pre-edit selection, so using it as the baseline would make
-  // the echo look like someone else's change and silently drop the second edit. Reopening starts
-  // from lastSent instead, and the close check accepts the room matching atOpen, lastSent or
-  // sentFrom as "nobody else changed anything".
-  // Both are cleared on ANY change of the room's selection after a send, not only when it equals
-  // lastSent: the server drops type names that are not in the project's list, so its answer can
-  // differ from what was sent, and a stale lastSent would then make every later close look like
-  // someone else's edit and drop the user's edits for good. A rejected send changes nothing, so
-  // the refs stay, and sentFrom keeps the unchanged room recognizable on the next close.
-  const lastSent = useRef<string[] | null>(null);
-  const sentFrom = useRef<string[] | null>(null);
-  // The previous room selection, so the effect clears only on a real change: not on the first
-  // render and not on a re-render that carries an equal selection.
-  const prevRoomTypes = useRef(settings.issueTypes);
-  useEffect(() => {
-    if (sameNames(settings.issueTypes, prevRoomTypes.current)) return;
-    prevRoomTypes.current = settings.issueTypes;
-    lastSent.current = null;
-    sentFrom.current = null;
-  }, [settings.issueTypes]);
-  const onTypesOpen = useCallback(() => {
-    const baseline = lastSent.current ?? settings.issueTypes;
-    setTypesDraft(baseline);
-    setTypesSession({ atOpen: baseline, projectKey: settings.projectKey });
-  }, [settings.issueTypes, settings.projectKey]);
-  const onTypesChange = useCallback((e: SelectChangeEvent<string[]>) => {
-    const { value } = e.target;
-    // MUI types a multiple select's value as string | string[]; the string form only comes
-    // from browser autofill, as a comma-joined list.
-    setTypesDraft(typeof value === "string" ? value.split(",") : value);
-  }, []);
-  const onTypesClose = useCallback(() => {
-    if (typesSession === null) return;
-    setTypesSession(null);
-    // Opening and closing without a net change sends nothing, so the room does not refetch.
-    // If the room's selection changed while the menu was open (another user's edit), the draft
-    // was built on the old selection and sending it would undo that edit, so it is dropped.
-    // The room matching our own last send (lastSent) is not someone else's edit, and neither is
-    // the room still at the selection we sent from (sentFrom: the send was rejected or not yet
-    // applied), so those count as unchanged too.
-    const room = settings.issueTypes;
-    const roomUnchanged =
-      sameNames(room, typesSession.atOpen) ||
-      (lastSent.current !== null && sameNames(room, lastSent.current)) ||
-      (sentFrom.current !== null && sameNames(room, sentFrom.current));
-    if (!sameNames(typesDraft, typesSession.atOpen) && roomUnchanged) {
-      lastSent.current = typesDraft;
-      sentFrom.current = room;
-      onChangeSettings({ issueTypes: typesDraft });
-    }
-  }, [typesSession, typesDraft, settings.issueTypes, onChangeSettings]);
-  // A project change (it clears the filter and loads other types) or the select turning disabled
-  // makes the draft meaningless, so the menu closes and the draft is discarded. Closing through
-  // state does not call onClose, so nothing is sent.
-  useEffect(() => {
-    if (typesSession && (typesDisabled || settings.projectKey !== typesSession.projectKey)) {
-      setTypesSession(null);
-    }
-  }, [typesSession, typesDisabled, settings.projectKey]);
+  const onSendTypes = useCallback(
+    (next: string[]) => onChangeSettings({ issueTypes: next }),
+    [onChangeSettings],
+  );
+  const types = useRoomMultiSelect({
+    roomValue: settings.issueTypes,
+    resetKey: settings.projectKey,
+    disabled: typesDisabled,
+    onSend: onSendTypes,
+  });
+
+  const epicsDisabled = disabled || epics.length === 0;
+  const onSendEpics = useCallback(
+    (next: string[]) => onChangeSettings({ epicKeys: next }),
+    [onChangeSettings],
+  );
+  const epicSelect = useRoomMultiSelect({
+    roomValue: settings.epicKeys,
+    resetKey: settings.projectKey,
+    disabled: epicsDisabled,
+    onSend: onSendEpics,
+  });
+  // A key that is not in the list (a closed epic still stored in the room) shows as the key.
+  const epicNames = useMemo(() => new Map(epics.map((e) => [e.key, e.name])), [epics]);
+  const epicLabel = useCallback((key: string) => epicNames.get(key) ?? key, [epicNames]);
+  const renderEpics = useCallback(
+    (selected: string[]): string => {
+      if (selected.length === 0) return "All epics";
+      if (selected.length === 1) return epicLabel(selected[0]);
+      return `${selected.length} epics`;
+    },
+    [epicLabel],
+  );
 
   // One row from lg, where the header is a fixed 48px tall and a second line would be clipped.
-  // Below lg the header grows, and at phone width the three selects (110px each) and Refresh do
+  // Below lg the header grows, and at phone width the four selects (110px each) and Refresh do
   // not fit one line, so they wrap. useFlexGap keeps the spacing right on wrapped lines.
   return (
     <Stack
@@ -210,7 +182,7 @@ export function QueueControls({
       </FormControl>
       {/* Closed, the value is the room's stored selection, not filtered to the menu: it is what
           the server filters the queue by, so the closed select must show exactly that. Open, it
-          is the local draft (see onTypesClose). */}
+          is the local draft (see useRoomMultiSelect). */}
       <FormControl size="small" sx={SELECT_FORM_SX} disabled={typesDisabled}>
         {/* displayEmpty shows "All types" with an empty value. MUI notches the outline for
             displayEmpty but does not shrink the label, which would then sit on the text. */}
@@ -223,18 +195,64 @@ export function QueueControls({
           label="Type"
           multiple
           displayEmpty
-          value={typesValue}
-          open={typesOpen}
-          onOpen={onTypesOpen}
-          onClose={onTypesClose}
-          onChange={onTypesChange}
+          value={types.value}
+          open={types.open}
+          onOpen={types.onOpen}
+          onClose={types.onClose}
+          onChange={types.onChange}
           renderValue={renderTypes}
-          title={typesTitle(typesValue)}
+          title={typesTitle(types.value)}
         >
           {issueTypes.map((name) => (
             <MenuItem key={name} value={name} dense>
-              <Checkbox size="small" checked={typesValue.includes(name)} sx={{ p: 0.5 }} />
+              <Checkbox size="small" checked={types.value.includes(name)} sx={{ p: 0.5 }} />
               <ListItemText primary={name} />
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      {/* Same structure as Type. An empty selection means all epics. A key in the room's
+          selection that is not in the menu still shows, by its key. */}
+      <FormControl size="small" sx={SELECT_FORM_SX} disabled={epicsDisabled}>
+        <InputLabel id={epicLabelId} shrink>
+          Epic
+        </InputLabel>
+        <Select<string[]>
+          sx={SELECT_SX}
+          labelId={epicLabelId}
+          label="Epic"
+          multiple
+          displayEmpty
+          value={epicSelect.value}
+          open={epicSelect.open}
+          onOpen={epicSelect.onOpen}
+          onClose={epicSelect.onClose}
+          onChange={epicSelect.onChange}
+          renderValue={renderEpics}
+          title={
+            epicSelect.value.length === 0 ? "All epics" : epicSelect.value.map(epicLabel).join(", ")
+          }
+          MenuProps={EPIC_MENU_PROPS}
+        >
+          {epics.map((epic) => (
+            <MenuItem key={epic.key} value={epic.key} dense>
+              <Checkbox
+                size="small"
+                checked={epicSelect.value.includes(epic.key)}
+                sx={{ p: 0.5 }}
+              />
+              <Box
+                aria-hidden
+                sx={{
+                  width: 10,
+                  height: 10,
+                  mr: 1,
+                  flexShrink: 0,
+                  borderRadius: "50%",
+                  bgcolor: epicHex(epic.color),
+                }}
+              />
+              <ListItemText primary={epic.name} secondary={epic.key} />
             </MenuItem>
           ))}
         </Select>

@@ -211,6 +211,7 @@ export function App() {
               projects={snapshot.projects}
               boards={snapshot.boards}
               issueTypes={snapshot.issueTypes}
+              epics={snapshot.epics}
               disabled={disabled}
               refreshing={snapshot.queue.loading}
               onChangeSettings={onChangeSettings}
