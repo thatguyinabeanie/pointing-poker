@@ -55,9 +55,8 @@ const PILL_LIST_SX = {
   py: 0,
 } as const;
 
-// The gap between the pills and the controls at lg, in px, so the compact-mode math and the
-// rendered space cannot disagree. It is the controls cell's left padding, not a flex gap: a gap
-// would also apply when the pills are shifted all the way left and would not be reserved.
+// The flex gap between the pills and the controls, in px. The row's columnGap uses this same
+// value, so the compact-mode math and the rendered space cannot disagree.
 const COLUMN_GAP = 16;
 
 // The controls width reserved at lg, whatever the phase, so compact mode does not depend on
@@ -143,7 +142,7 @@ export function Players({ players, phase, meId, disabled, onReveal, onReset }: P
         display: "flex",
         flexWrap: { xs: "wrap", lg: "nowrap" },
         alignItems: "center",
-        columnGap: 2,
+        columnGap: `${COLUMN_GAP}px`,
         rowGap: 0.5,
         height: { lg: 52 },
         minHeight: 52,
@@ -156,7 +155,8 @@ export function Players({ players, phase, meId, disabled, onReveal, onReset }: P
         aria-label="Participants"
         sx={{
           ...PILL_LIST_SX,
-          flex: "1 1 0",
+          flexGrow: 1,
+          flexShrink: 1,
           minWidth: 0,
           // Stretch to the row's height so the overflow clip does not cut the avatar ring.
           alignSelf: "stretch",
