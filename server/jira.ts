@@ -50,7 +50,7 @@ export interface JiraClientOptions {
   fetch?: typeof fetch;
   timeoutMs?: number;
   // Optional, pino-compatible. Only sizes and counts are ever passed, never ticket content.
-  logger?: { debug(obj: object, msg: string): void };
+  logger?: { debug(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -72,6 +72,8 @@ const MAX_BOARDS = 500;
 // misses the epics of its lowest-ranked tickets, which is accepted over an unbounded scan.
 const MAX_EPIC_SCAN = 1000;
 const EPIC_SCAN_PAGE_SIZE = 100;
+// The project's open epics, listed under the queue's epics so the menu can search all of them.
+const MAX_OPEN_EPICS = 1000;
 const QUEUE_PAGE_SIZE = 50;
 const MAX_SPRINTS = 50;
 const SEARCH_PAGE_SIZE = 10;
@@ -730,15 +732,47 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return { ok: true, value };
   }
 
-  // The Epic filter's menu: the epics of the tickets that still need points, in the order they
-  // first appear in the queue (rank order). The project's open epics were tried first, but CIVIS
-  // has more than 100, and the first 100 left out the epics of the queued tickets (decision 52).
-  // The Type filter applies, so the menu matches the queue; the Epic filter does not, or picking
-  // one epic would shrink the menu to that epic. Not cached: the list must follow the queue.
+  // The project's open epics, key and name only, in rank order. Cached like the other lists,
+  // because it does not follow the queue (the queue's own epics are scanned on every call).
+  async function listOpenEpics(
+    projectKey: string,
+  ): Promise<Result<{ key: string; name: string }[]>> {
+    const cacheKey = `openEpics:${projectKey}`;
+    const cached = cacheGet<{ key: string; name: string }[]>(cacheKey);
+    if (cached) return { ok: true, value: cached };
+
+    const jql = `project = ${jqlQuote(projectKey)} AND issuetype = Epic AND statusCategory != Done ORDER BY Rank ASC`;
+    const value: { key: string; name: string }[] = [];
+    let pageToken: string | undefined;
+    while (value.length < MAX_OPEN_EPICS) {
+      const found = await searchIssues(
+        jql,
+        Math.min(EPIC_SCAN_PAGE_SIZE, MAX_OPEN_EPICS - value.length),
+        ["summary"],
+        pageToken,
+      );
+      if (!found.ok) return found;
+      for (const item of found.value.items) value.push({ key: item.key, name: item.summary });
+      // An empty page with a token would repeat forever, so it ends the loop too.
+      if (found.value.nextPageToken === null || found.value.items.length === 0) break;
+      pageToken = found.value.nextPageToken;
+    }
+    cachePut(cacheKey, value);
+    return { ok: true, value };
+  }
+
+  // The Epic filter's menu: first the epics of the tickets that still need points, in the order
+  // they first appear in the queue (rank order, inQueue true), then every other open epic of the
+  // project (inQueue false, rank order). The queue epics come from a scan because CIVIS has more
+  // than 100 open epics, and the first 100 left out the epics of the queued tickets (decision 52);
+  // the open list below them is what the menu's search looks through. The Type filter applies to
+  // the scan, so the top group matches the queue; the Epic filter does not, or picking one epic
+  // would shrink the menu to that epic. The scan is not cached, because it must follow the queue.
   async function listEpics(settings: QueueSettings): Promise<Result<QueueEpic[]>> {
     if (settings.projectKey === null) return { ok: true, value: [] };
+    const projectKey = settings.projectKey;
     const clause = await needsPointingClause(settings);
-    const jql = `project = ${jqlQuote(settings.projectKey)} AND ${clause} AND parent is not EMPTY ORDER BY Rank ASC`;
+    const jql = `project = ${jqlQuote(projectKey)} AND ${clause} AND parent is not EMPTY ORDER BY Rank ASC`;
 
     // A Map keeps the first appearance of each epic. A sub-task's story parent is not an epic,
     // so parseEpic leaves it out.
@@ -755,7 +789,9 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       );
       if (!found.ok) return found;
       for (const item of found.value.items) {
-        if (item.epic && !epics.has(item.epic.key)) epics.set(item.epic.key, item.epic);
+        if (item.epic && !epics.has(item.epic.key)) {
+          epics.set(item.epic.key, { ...item.epic, inQueue: true });
+        }
       }
       scanned += found.value.items.length;
       more = found.value.nextPageToken !== null;
@@ -763,10 +799,25 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       if (found.value.nextPageToken === null || found.value.items.length === 0) break;
       pageToken = found.value.nextPageToken;
     }
-    // A full scan with a next page means the menu is missing some epics; leave a trace.
+    // A full scan with a next page means the top group is missing some epics; leave a trace.
     if (scanned >= MAX_EPIC_SCAN && more) {
       opts.logger?.debug({ scanned, epics: epics.size }, "jira epic scan capped");
     }
+
+    // The open-epics list is a convenience. A project with no "Epic" issue type answers 400, and
+    // then the menu lists only the queue's epics: one warn line, no error for the user. A selected
+    // epic whose tickets are all pointed is then not listed, so the room drops it (setEpics).
+    const open = await listOpenEpics(projectKey);
+    if (open.ok) {
+      for (const epic of open.value) {
+        if (!epics.has(epic.key)) {
+          epics.set(epic.key, { key: epic.key, name: epic.name, color: null, inQueue: false });
+        }
+      }
+    } else {
+      opts.logger?.warn({ reason: open.reason, projectKey }, "jira open epics unavailable");
+    }
+
     const colors = await epicColors([...epics.keys()]);
     const value = [...epics.values()].map((epic) => ({
       ...epic,
@@ -990,7 +1041,14 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         : typeof type?.name === "string" && type.name.toLowerCase() === "epic";
     if (!isEpic) return null;
     const name = parent.fields?.summary;
-    return { key: parent.key, name: typeof name === "string" ? name : "", color: null };
+    // inQueue only means something in Snapshot.epics, where listEpics sets it. A queue row's epic
+    // cannot know the rest of the queue, so it is false here.
+    return {
+      key: parent.key,
+      name: typeof name === "string" ? name : "",
+      color: null,
+      inQueue: false,
+    };
   }
 
   function parseIssues(issues: unknown): QueueItem[] | undefined {

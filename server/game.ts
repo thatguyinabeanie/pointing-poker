@@ -395,8 +395,8 @@ export function setIssueTypes(state: GameState, types: string[]): Result {
 }
 
 // The Epic menu's mirror of setIssueTypes: it drops selected epics that are no longer listed (an
-// epic closed or deleted), because Jira answers 400 to `parent in (...)` with an unknown key and
-// every later queue fetch would fail. An empty list keeps the selection, so an empty answer cannot
+// epic closed or deleted; one whose tickets are all pointed is still open, so it stays), because
+// Jira answers 400 to `parent in (...)` with an unknown key and every later queue fetch would fail. An empty list keeps the selection, so an empty answer cannot
 // wipe the room's filter (a failed fetch never reaches here at all).
 export function setEpics(state: GameState, epics: QueueEpic[]): Result {
   if (epics.length === 0) return ok({ ...state, epics });
