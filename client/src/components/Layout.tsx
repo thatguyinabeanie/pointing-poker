@@ -192,6 +192,9 @@ export function Layout({ left, main, floating }: Props) {
           left: { xs: "50%", lg: `var(${FLOATING_CENTER_VAR}, 50%)` },
           transform: "translateX(-50%)",
           zIndex: (theme) => theme.zIndex.appBar,
+          // A fixed box with left and translateX(-50%) shrink-to-fits into only the space to the
+          // right of left, so a group centered far right wrapped the deck onto two rows.
+          width: "max-content",
           maxWidth: "100vw",
           // The box spans the group's width but is mostly empty; clicks on the empty parts must
           // reach the ticket beneath. The children opt back in.
