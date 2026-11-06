@@ -218,7 +218,10 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
 
   // ---------- Jira-backed helpers shared by commands and bootstrap (section 14) ----------
 
-  async function fetchQueue(): Promise<void> {
+  // refreshEpics is false only for the refetch that fetchEpics itself starts. The epic list does
+  // not depend on the Epic filter, so that refetch cannot change it, and skipping the fetch is
+  // what makes fetchQueue -> fetchEpics -> fetchQueue unable to loop.
+  async function fetchQueue(refreshEpics = true): Promise<void> {
     // Bumped first so a fetch still in flight for a previous project is dropped.
     const seq = ++queueSeq;
     if (state.queueSettings.projectKey === null) {
@@ -255,6 +258,11 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       app.log.info({ count }, "queue refreshed");
     }
     broadcast();
+    // The epic menu follows the queue: pointing a ticket or changing the Type filter can add or
+    // remove epics. Not awaited, so a save's auto-advance does not wait for the epic scan.
+    if (refreshEpics && "sections" in outcome) {
+      void fetchEpics().catch((err: unknown) => app.log.error({ err }, "epics fetch threw"));
+    }
   }
 
   // "skipped" (no project) and "stale" (a newer fetch or a project change won) mean nothing
@@ -294,16 +302,18 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   // keeps its own sequence counter, so a slow epic answer never discards a fresh type answer.
   function filterListFetcher<T>(opts: {
     label: string; // "issue types" | "epics", used in the debug and warn logs
-    load: (projectKey: string) => Promise<JiraResult<T[]>>;
+    load: (projectKey: string, settings: QueueSettings) => Promise<JiraResult<T[]>>;
     apply: (state: game.GameState, list: T[]) => game.Result;
     selected: (settings: QueueSettings) => string[];
+    // Whether the queue refetch started by a dropped selection also refetches the epic list.
+    refetchEpics: boolean;
   }): () => Promise<void> {
     let seq = 0;
     return async () => {
       const projectKey = state.queueSettings.projectKey;
       if (projectKey === null) return;
       const mySeq = ++seq;
-      const res = await opts.load(projectKey);
+      const res = await opts.load(projectKey, state.queueSettings);
       if (mySeq !== seq || state.queueSettings.projectKey !== projectKey) {
         app.log.debug({ projectKey }, `dropped stale ${opts.label} result`);
         return;
@@ -319,7 +329,9 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       // fetched with the old selection, so refetch it, as a filter change does. Awaited rather
       // than handed to runAsync, which is per socket: this helper is room-level, and every caller
       // already handles a throw (runAsync for commands, onThrow at bootstrap).
-      if (!sameNames(selectedBefore, opts.selected(state.queueSettings))) await fetchQueue();
+      if (!sameNames(selectedBefore, opts.selected(state.queueSettings))) {
+        await fetchQueue(opts.refetchEpics);
+      }
     };
   }
 
@@ -328,13 +340,16 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     load: (projectKey) => jira.listIssueTypes(projectKey),
     apply: (current, types) => game.setIssueTypes(current, types),
     selected: (settings) => settings.issueTypes,
+    // A dropped type changes the queue, and so the epics that have tickets in it.
+    refetchEpics: true,
   });
 
   const fetchEpics = filterListFetcher({
     label: "epics",
-    load: (projectKey) => jira.listEpics(projectKey),
+    load: (_projectKey, settings) => jira.listEpics(settings),
     apply: (current, epics) => game.setEpics(current, epics),
     selected: (settings) => settings.epicKeys,
+    refetchEpics: false,
   });
 
   // Resolves JIRA_DEFAULT_BOARD (numeric id or board name) against the default project's boards
@@ -413,9 +428,9 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     }
     bootstrapped = true;
     void fetchProjectsOnce().catch(onThrow);
-    // The queue does not wait for it: no filter can be set before the menu has types.
+    // The queue does not wait for it: no filter can be set before the menu has types. The epic
+    // list is not fetched here: fetchQueue fetches it after every queue fetch.
     void fetchIssueTypes().catch(onThrow);
-    void fetchEpics().catch(onThrow);
     // The queue waits for default board resolution so its first fetch uses the resolved board.
     void (async () => {
       if (defaultBoard === null) {
@@ -701,7 +716,6 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
           await fetchBoards();
         });
         runAsync(fetchIssueTypes);
-        runAsync(fetchEpics);
       }
       // Any effective change refetches, including a Type filter change on its own.
       runAsync(fetchQueue);
@@ -709,8 +723,9 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
 
     async function refreshProjects(): Promise<void> {
       // jira.ts caches both lists for 10 minutes and the protocol has no cache-bypass argument,
-      // so inside that window this re-sends the cached lists. The issue types and epics are refreshed too,
-      // but never reported: fetchIssueTypes and fetchEpics only log their failures.
+      // so inside that window this re-sends the cached lists. The issue types and epics are
+      // refreshed too, but never reported: fetchIssueTypes and fetchEpics only log their failures.
+      // The epic list is not cached, so this is the one place it is fetched without a queue fetch.
       const [projectsFailure, boardsFailure] = await Promise.all([
         fetchProjectsOnce(),
         fetchBoards(),
