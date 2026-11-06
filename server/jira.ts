@@ -74,6 +74,8 @@ const MAX_EPIC_SCAN = 1000;
 const EPIC_SCAN_PAGE_SIZE = 100;
 // The project's open epics, listed under the queue's epics so the menu can search all of them.
 const MAX_OPEN_EPICS = 1000;
+// Cache value for an epic Jira gives no color (see epicColors).
+const NO_EPIC_COLOR = "";
 const QUEUE_PAGE_SIZE = 50;
 const MAX_SPRINTS = 50;
 const SEARCH_PAGE_SIZE = 10;
@@ -738,7 +740,11 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     projectKey: string,
   ): Promise<Result<{ key: string; name: string }[]>> {
     const cacheKey = `openEpics:${projectKey}`;
-    const cached = cacheGet<{ key: string; name: string }[]>(cacheKey);
+    const cached = cacheGet<{ key: string; name: string }[] | "failed">(cacheKey);
+    // A project with no "Epic" type answers 400 every time, so the failure is cached for the
+    // same window: it costs one failing request and one warn per window, not one per queue fetch.
+    if (cached === "failed")
+      return fail("jira_error", "Open epics are unavailable for this project.");
     if (cached) return { ok: true, value: cached };
 
     const jql = `project = ${jqlQuote(projectKey)} AND issuetype = Epic AND statusCategory != Done ORDER BY Rank ASC`;
@@ -751,7 +757,14 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         ["summary"],
         pageToken,
       );
-      if (!found.ok) return found;
+      if (!found.ok) {
+        // jira_error is a 400 (no Epic type) or another non-2xx answer; a timeout, 429 or bad
+        // credentials are retried on the next call. The warn lives here so a cached failure
+        // does not repeat it.
+        if (found.reason === "jira_error") cachePut(cacheKey, "failed");
+        opts.logger?.warn({ reason: found.reason, projectKey }, "jira open epics unavailable");
+        return found;
+      }
       for (const item of found.value.items) value.push({ key: item.key, name: item.summary });
       // An empty page with a token would repeat forever, so it ends the loop too.
       if (found.value.nextPageToken === null || found.value.items.length === 0) break;
@@ -805,7 +818,8 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     }
 
     // The open-epics list is a convenience. A project with no "Epic" issue type answers 400, and
-    // then the menu lists only the queue's epics: one warn line, no error for the user. A selected
+    // then the menu lists only the queue's epics: one warn line per cache window (logged by
+    // listOpenEpics), no error for the user. A selected
     // epic whose tickets are all pointed is then not listed, so the room drops it (setEpics).
     const open = await listOpenEpics(projectKey);
     if (open.ok) {
@@ -814,8 +828,6 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
           epics.set(epic.key, { key: epic.key, name: epic.name, color: null, inQueue: false });
         }
       }
-    } else {
-      opts.logger?.warn({ reason: open.reason, projectKey }, "jira open epics unavailable");
     }
 
     const colors = await epicColors([...epics.keys()]);
@@ -1082,6 +1094,19 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
   async function epicColors(keys: string[]): Promise<Map<string, EpicColor>> {
     const colors = new Map<string, EpicColor>();
     if (keys.length === 0) return colors;
+    // The Epic menu lists the whole project's open epics and is rebuilt after every queue fetch,
+    // so an uncached lookup meant up to ten bulkfetch requests each time, and a 429 silently
+    // dropped the colors. Each key is cached for the list TTL, so a steady state costs no
+    // request, and only keys not seen in the window are fetched. NO_EPIC_COLOR caches "Jira has
+    // no color" too, or those epics would be refetched every time. A color changed in Jira shows
+    // up when its entry expires.
+    const missing: string[] = [];
+    for (const key of keys) {
+      const hit = cacheGet<string>(`epicColor:${key}`);
+      if (hit === null) missing.push(key);
+      else if (hit !== NO_EPIC_COLOR) colors.set(key, hit as EpicColor);
+    }
+    if (missing.length === 0) return colors;
     try {
       const fields = await listFields();
       if (!fields.ok) {
@@ -1097,8 +1122,8 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       if (wanted.length === 0) return colors;
 
       const chunks: string[][] = [];
-      for (let i = 0; i < keys.length; i += EPIC_COLOR_CHUNK) {
-        chunks.push(keys.slice(i, i + EPIC_COLOR_CHUNK));
+      for (let i = 0; i < missing.length; i += EPIC_COLOR_CHUNK) {
+        chunks.push(missing.slice(i, i + EPIC_COLOR_CHUNK));
       }
       // Chunks run concurrently so their timeouts do not add up while the queue spinner waits.
       // bulkfetch (not `key in (...)` JQL) because JQL answers 400 for the whole list when one
@@ -1140,6 +1165,9 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
             if (typeof issue?.key !== "string") continue;
             const color = pickEpicColor(issue.fields, issueColorId, epicColorId);
             if (color) colors.set(issue.key, color);
+            // Only keys Jira answered for are cached: a key in issueErrors or a failed chunk is
+            // retried on the next call.
+            cachePut(`epicColor:${issue.key}`, color ?? NO_EPIC_COLOR);
           }
         }),
       );

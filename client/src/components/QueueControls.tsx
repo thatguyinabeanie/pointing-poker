@@ -15,6 +15,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useCallback,
+  useEffect,
   useId,
   useMemo,
   useRef,
@@ -156,11 +157,26 @@ export function QueueControls({
     (e: ChangeEvent<HTMLInputElement>) => setEpicSearch(e.target.value),
     [],
   );
-  const { onClose: closeEpicDraft } = epicSelect;
-  const onEpicClose = useCallback(() => {
-    setEpicSearch("");
-    closeEpicDraft();
-  }, [closeEpicDraft]);
+  // Keyed on `open` and not on Select's onClose: the hook also closes the menu by state (a project
+  // change, or the select turning disabled), which never calls onClose, and the old text would
+  // then be in the field at the next open.
+  const epicOpen = epicSelect.open;
+  useEffect(() => {
+    if (!epicOpen) setEpicSearch("");
+  }, [epicOpen]);
+  // The field takes focus, not the first row, or the first typed letter would be type-ahead.
+  // onEntered covers a focus trap that moves focus after the field mounts. searchRef is stable,
+  // so MenuProps keeps one identity across renders.
+  const epicMenuProps = useMemo(
+    () => ({
+      autoFocus: false,
+      slotProps: {
+        paper: { sx: EPIC_MENU_PAPER_SX },
+        transition: { onEntered: () => searchRef.current?.focus() },
+      },
+    }),
+    [],
+  );
   // Select's type-ahead and the menu's arrow handling listen for keydown on the list, which holds
   // the field, so every key but Escape stays in the field. Escape must still reach the Modal to
   // close the menu, and Tab to reach the Menu, which closes on it. ArrowDown is handed to the
@@ -350,21 +366,13 @@ export function QueueControls({
           value={epicSelect.value}
           open={epicSelect.open}
           onOpen={epicSelect.onOpen}
-          onClose={onEpicClose}
+          onClose={epicSelect.onClose}
           onChange={epicSelect.onChange}
           renderValue={renderEpics}
           title={
             epicSelect.value.length === 0 ? "All epics" : epicSelect.value.map(epicLabel).join(", ")
           }
-          MenuProps={{
-            // The field takes focus, not the first row, or the first typed letter would be
-            // type-ahead. onEntered covers a focus trap that moves focus after the field mounts.
-            autoFocus: false,
-            slotProps: {
-              paper: { sx: EPIC_MENU_PAPER_SX },
-              transition: { onEntered: () => searchRef.current?.focus() },
-            },
-          }}
+          MenuProps={epicMenuProps}
         >
           {epicMenuItems}
         </Select>
