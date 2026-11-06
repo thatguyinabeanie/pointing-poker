@@ -736,7 +736,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       // jira.ts caches both lists for 10 minutes and the protocol has no cache-bypass argument,
       // so inside that window this re-sends the cached lists. The issue types and epics are
       // refreshed too, but never reported: fetchIssueTypes and fetchEpics only log their failures.
-      // The epic list is not cached, so this is the one place it is fetched without a queue fetch.
+      // The queue-epic scan is not cached (the open-epics part is), so this is the one place the
+      // epic list is fetched without a queue fetch.
       const [projectsFailure, boardsFailure] = await Promise.all([
         fetchProjectsOnce(),
         fetchBoards(),

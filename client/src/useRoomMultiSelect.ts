@@ -64,7 +64,10 @@ export function useRoomMultiSelect({ roomValue, resetKey, disabled, onSend }: Op
     const { value } = e.target;
     // MUI types a multiple select's value as string | string[]; the string form only comes
     // from browser autofill, as a comma-joined list.
-    setDraft(typeof value === "string" ? value.split(",") : value);
+    // Select also reports the valueless children (a search field, a group header) when one is
+    // clicked, as `undefined` in the list. Those are not selections.
+    const list = typeof value === "string" ? value.split(",") : value;
+    setDraft(list.filter((v): v is string => typeof v === "string"));
   }, []);
   const onClose = useCallback(() => {
     if (session === null) return;

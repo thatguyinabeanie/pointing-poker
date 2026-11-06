@@ -115,6 +115,9 @@ export interface QueueEpic {
   key: string;
   name: string; // the epic's summary
   color: EpicColor | null; // null: Jira has no color, or the lookup failed
+  // Only meaningful in Snapshot.epics: true when a ticket that needs points belongs to the epic.
+  // The epic on a queue row is always false, because a row cannot know the rest of the queue.
+  inQueue: boolean;
 }
 
 export interface QueueItem {
@@ -172,7 +175,7 @@ export interface Snapshot {
   boards: JiraBoard[];
   // The project's issue type names, in Jira's order, for the Type filter menu.
   issueTypes: string[];
-  // The project's open epics in rank order, for the Epic filter menu.
+  // The Epic filter menu: the queue's epics first (inQueue), then the project's other open epics.
   epics: QueueEpic[];
   // Newest first. Same list for every viewer.
   history: SessionHistoryEntry[];

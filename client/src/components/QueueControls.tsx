@@ -5,10 +5,22 @@ import FormControl from "@mui/material/FormControl";
 import IconButton from "@mui/material/IconButton";
 import InputLabel from "@mui/material/InputLabel";
 import ListItemText from "@mui/material/ListItemText";
+import ListSubheader from "@mui/material/ListSubheader";
 import MenuItem from "@mui/material/MenuItem";
 import Select, { type SelectChangeEvent } from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import { useCallback, useId, useMemo } from "react";
+import TextField from "@mui/material/TextField";
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { JiraBoard, JiraProject, QueueEpic, QueueSettings } from "../../../shared/protocol.ts";
 import { epicHex } from "../lib/epicColors.ts";
 import { useRoomMultiSelect } from "../useRoomMultiSelect.ts";
@@ -43,9 +55,25 @@ const SELECT_FORM_SX = {
   maxWidth: { xs: 220, lg: 130, xl: 220 },
 } as const;
 
-// The Epic menu can be long (every epic with a ticket needing points), so it scrolls instead of
-// running off the screen.
-const EPIC_MENU_PROPS = { slotProps: { paper: { sx: { maxHeight: 360 } } } } as const;
+// The Epic menu can be long (every open epic in the project), so it scrolls instead of running off
+// the screen.
+const EPIC_MENU_PAPER_SX = { maxHeight: 360 } as const;
+
+// Group headers scroll away with their rows. Only the search field is pinned: two sticky
+// headers at top 0 would sit on top of each other.
+const EPIC_GROUP_HEADER_SX = { lineHeight: "32px", fontSize: 12 } as const;
+
+// The search field sits in a ListSubheader, which Select treats as a child with no value, so a
+// click on it is not an option click. The opaque background keeps rows from showing through it
+// while they scroll under it.
+const EPIC_SEARCH_HEADER_SX = {
+  top: 0,
+  zIndex: 2,
+  px: 1.5,
+  py: 1,
+  bgcolor: "background.paper",
+  lineHeight: "normal",
+} as const;
 
 // An empty selection means all types, so the closed select says so instead of looking blank.
 // Two or more show a count: the joined names ("Story, Bug") were the widest value in the header.
@@ -120,6 +148,118 @@ export function QueueControls({
   // A key that is not in the list (a closed epic still stored in the room) shows as the key.
   const epicNames = useMemo(() => new Map(epics.map((e) => [e.key, e.name])), [epics]);
   const epicLabel = useCallback((key: string) => epicNames.get(key) ?? key, [epicNames]);
+
+  // The search text is local to this client and cleared on close, so it is not part of the hook's
+  // draft. Reopening starts from the full list.
+  const [epicSearch, setEpicSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const onSearchChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => setEpicSearch(e.target.value),
+    [],
+  );
+  // Keyed on `open` and not on Select's onClose: the hook also closes the menu by state (a project
+  // change, or the select turning disabled), which never calls onClose, and the old text would
+  // then be in the field at the next open.
+  const epicOpen = epicSelect.open;
+  useEffect(() => {
+    if (!epicOpen) setEpicSearch("");
+  }, [epicOpen]);
+  // The field takes focus, not the first row, or the first typed letter would be type-ahead.
+  // onEntered covers a focus trap that moves focus after the field mounts. searchRef is stable,
+  // so MenuProps keeps one identity across renders.
+  const epicMenuProps = useMemo(
+    () => ({
+      autoFocus: false,
+      slotProps: {
+        paper: { sx: EPIC_MENU_PAPER_SX },
+        transition: { onEntered: () => searchRef.current?.focus() },
+      },
+    }),
+    [],
+  );
+  // Select's type-ahead and the menu's arrow handling listen for keydown on the list, which holds
+  // the field, so every key but Escape stays in the field. Escape must still reach the Modal to
+  // close the menu, and Tab to reach the Menu, which closes on it. ArrowDown is handed to the
+  // first row by hand, because the menu's arrow navigation never sees it. Rows are the elements
+  // with a data-value: Select drops that attribute from the headers.
+  const onSearchKeyDown = useCallback((e: KeyboardEvent<HTMLElement>) => {
+    if (e.key === "Escape" || e.key === "Tab") return;
+    e.stopPropagation();
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      e.currentTarget.closest("ul")?.querySelector<HTMLElement>("li[data-value]")?.focus();
+    }
+  }, []);
+  // Selected epics stay listed while filtering, so a hidden checked row cannot be sent by surprise.
+  const epicGroups = useMemo(() => {
+    const q = epicSearch.trim().toLowerCase();
+    const matches = (e: QueueEpic) =>
+      q === "" || e.name.toLowerCase().includes(q) || e.key.toLowerCase().includes(q);
+    const isShown = (e: QueueEpic) => epicSelect.value.includes(e.key) || matches(e);
+    return {
+      inQueue: epics.filter((e) => e.inQueue && isShown(e)),
+      other: epics.filter((e) => !e.inQueue && isShown(e)),
+      anyMatch: epics.some(matches),
+    };
+  }, [epics, epicSearch, epicSelect.value]);
+  const epicRow = (epic: QueueEpic): ReactNode => (
+    <MenuItem key={epic.key} value={epic.key} dense>
+      <Checkbox size="small" checked={epicSelect.value.includes(epic.key)} sx={{ p: 0.5 }} />
+      <Box
+        aria-hidden
+        sx={{
+          width: 10,
+          height: 10,
+          mr: 1,
+          flexShrink: 0,
+          borderRadius: "50%",
+          bgcolor: epicHex(epic.color),
+        }}
+      />
+      <ListItemText primary={epic.name} secondary={epic.key} />
+    </MenuItem>
+  );
+  // Select accepts an array of children, not a Fragment. Headers have no value, so a click on
+  // one selects nothing.
+  const epicMenuItems: ReactNode[] = [
+    <ListSubheader key="search" sx={EPIC_SEARCH_HEADER_SX}>
+      <TextField
+        size="small"
+        fullWidth
+        autoFocus
+        placeholder="Search epics"
+        value={epicSearch}
+        inputRef={searchRef}
+        onChange={onSearchChange}
+        onKeyDown={onSearchKeyDown}
+        slotProps={{ htmlInput: { "aria-label": "Search epics", autoComplete: "off" } }}
+      />
+    </ListSubheader>,
+  ];
+  if (epicGroups.inQueue.length > 0) {
+    epicMenuItems.push(
+      <ListSubheader key="h-queue" disableSticky sx={EPIC_GROUP_HEADER_SX}>
+        In the queue
+      </ListSubheader>,
+      ...epicGroups.inQueue.map(epicRow),
+    );
+  }
+  if (epicGroups.other.length > 0) {
+    epicMenuItems.push(
+      <ListSubheader key="h-other" disableSticky sx={EPIC_GROUP_HEADER_SX}>
+        Other open epics
+      </ListSubheader>,
+      ...epicGroups.other.map(epicRow),
+    );
+  }
+  if (!epicGroups.anyMatch) {
+    epicMenuItems.push(
+      <ListSubheader key="empty" disableSticky sx={EPIC_GROUP_HEADER_SX}>
+        No epics match
+      </ListSubheader>,
+    );
+  }
+
   const renderEpics = useCallback(
     (selected: string[]): string => {
       if (selected.length === 0) return "All epics";
@@ -232,29 +372,9 @@ export function QueueControls({
           title={
             epicSelect.value.length === 0 ? "All epics" : epicSelect.value.map(epicLabel).join(", ")
           }
-          MenuProps={EPIC_MENU_PROPS}
+          MenuProps={epicMenuProps}
         >
-          {epics.map((epic) => (
-            <MenuItem key={epic.key} value={epic.key} dense>
-              <Checkbox
-                size="small"
-                checked={epicSelect.value.includes(epic.key)}
-                sx={{ p: 0.5 }}
-              />
-              <Box
-                aria-hidden
-                sx={{
-                  width: 10,
-                  height: 10,
-                  mr: 1,
-                  flexShrink: 0,
-                  borderRadius: "50%",
-                  bgcolor: epicHex(epic.color),
-                }}
-              />
-              <ListItemText primary={epic.name} secondary={epic.key} />
-            </MenuItem>
-          ))}
+          {epicMenuItems}
         </Select>
       </FormControl>
       <IconButton
