@@ -177,6 +177,33 @@ Why: on 11/06/2026 the user looked at the app and said "things feel broken", the
   - the peek's values are readable
   - no text runs behind the hand or pill
 
+### Task 6: The results move into the players strip
+
+Why: on 11/06/2026 the user, looking at the floating results pill, said it "would be better if it was on the same bar as the names with point cards". This replaces spec decision D5 (a floating results pill) and the D6 layout (the hand peeking beside the pill).
+
+**Files:**
+- Rename: `client/src/components/ResultsPill.tsx` to `client/src/components/RoundResults.tsx`. The component becomes `RoundResults`, with the same props, and no longer renders as a floating card.
+- Modify: `client/src/components/RoundControls.tsx`, `client/src/components/Players.tsx`, `client/src/App.tsx`, `client/src/components/Layout.tsx`
+- Modify: `docs/spec/03-client.md`, `docs/spec/08-decision-log.md` (decision 51, a dated note)
+
+**Interfaces:**
+- `RoundResults({ round, stats, ticket, deck, disabled, jiraSave, onSave, onNext })`, the same props as `ResultsPill`. It keeps `usePointsPick`, the chart, "Avg · Median", the chip, Points, Save (`aria-label="Save to Jira"`, with the spinner) and Next (`{ type: "reset", clearTicket: true }`), all unchanged in behavior.
+- `RoundControls` renders `RoundResults` in `revealed`, in place of the "Revealed" text, followed by Reset.
+- The floating group holds only the hand, in every phase.
+
+- [ ] **Step 1: Results in the strip.**
+  - In `revealed`, the strip's right side reads, left to right: chart, "Avg · Median", chip, Points, Save, Next, Reset.
+  - Compact controls fit the 52px strip: small size, a Points select about 32px tall, and no card frame, shadow or radius.
+  - Below `lg` the strip wraps, so the results take their own row under the pills.
+- [ ] **Step 2: Compact mode stays phase-independent.** This is decision 48's rule and the user's "stable always". The reserve becomes the revealed layout's width. Measure the widest revealed controls (Points "0.5", a three-bar chart, "Spread 13–21") and round up. The names then do not change between voting and revealed. The cost is that with many players the names switch to initials sooner; say so in a comment.
+- [ ] **Step 3: The floating group is only the hand.** Remove the pill, the pill fade rule, and the below-`lg` stacking from Layout. Keep the hand centered on the Ticket column at `lg` (clamped 16px inside the window) and on the window below `lg`. Simplify the hand's room measurement only where the pill was the reason for it. Keep the measured-center rule, since the clamp can still move the hand.
+- [ ] **Step 4: Docs.**
+  - 03-client.md: replace the ResultsPill section with RoundResults in the strip, and update Layout, the floating group, the opacity exceptions and the stacking.
+  - Decision 51 gets a dated note (11/06/2026) that the user moved the results into the strip, replacing D5 and the D6 "beside the pill" layout.
+- [ ] **Step 5: Gate, commit, push.** Gate expected: all four exit 0.
+  - Browser check (controller) after a reveal: the strip shows the results and Reset on one 52px row at `lg`; Points, Save and Next work; a changed vote updates the results live; the hand stays put when the round is revealed; names do not switch between full and initials at the reveal.
+  - At phone width: the results wrap onto their own row.
+
 ### Task 5: Search the epics, with the queue's epics on top
 
 Why: on 11/06/2026 the user asked for "a way to search for epics" and to show "epics in queue … at the top". Asked what goes below them, the user chose all the other open epics in the project.
