@@ -3,6 +3,7 @@ import Box from "@mui/material/Box";
 import { alpha, type Theme } from "@mui/material/styles";
 import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
+import type { ReactNode } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { isNumericCard } from "../../../shared/deck.ts";
 import type { Phase, PlayerView } from "../../../shared/protocol.ts";
@@ -15,6 +16,8 @@ interface Props {
   phase: Phase;
   meId: number | null;
   disabled: boolean;
+  // Passed through to RoundControls, which shows it after the reveal.
+  results: ReactNode;
   onReveal: () => void;
   onReset: (opts: { clearTicket: boolean }) => void;
 }
@@ -60,20 +63,32 @@ const PILL_LIST_SX = {
 // value, so the compact-mode math and the rendered space cannot disagree.
 const COLUMN_GAP = 16;
 
-// The controls width reserved at lg, whatever the phase, so compact mode does not depend on
-// the phase: the voting controls ("N of M voted", Reveal, Reset) and the revealed ones
-// ("Revealed", Reset) differ in width, and measuring only the current one would let names show
-// in one phase and drop in the other. It is the CSS min-width of the controls cell, so a wider
-// real layout counts at its real width.
-// Measured in Chrome at a 1440px layout while voting: "0 of 1 voted" 90px, Reveal 68px, Reset
-// 64px and two 8px gaps came to 238px with a one-digit count. Rounded up to 260, not to 240, to
-// leave room for two-digit counts such as "12 of 14 voted".
-const CONTROLS_RESERVED_WIDTH = 260;
+// The controls width reserved at lg, whatever the phase, so compact mode does not depend on the
+// phase (decision 48, and the user's "stable always" of 11/06/2026): the voting controls ("N of M
+// voted", Reveal, Reset) and the revealed ones (the results, then Reset) differ in width, and
+// measuring only the current one would let names show in one phase and drop at the reveal. It is
+// the CSS min-width of the controls cell, so a wider real layout counts at its real width.
+//
+// The revealed controls are the widest, so they set it. ESTIMATED, not measured (no browser in
+// that session); the controller re-measures it in Chrome and replaces this with the real figure.
+// The estimate, for a three-bar chart, "Spread 13–21" and Points "0.5", from MUI's small-size
+// metrics and Lato at the theme's sizes:
+//   chart: three 16px bars and two 4px gaps                             56
+//   "Avg 10.5 · Median 10.5" (body2, 14px; one decimal is the widest)   145
+//   "Spread 13–21" chip (small: 13px text, 8px padding, 1px border)     100
+//   Points select (its minWidth; "0.5" is narrower)                     96
+//   Save, with the 16px spinner while saving (64px without)             80
+//   Next and Reset (small buttons at their 64px minWidth)               128
+//   six 8px gaps                                                        48
+// That is 653px, rounded up to 680, which also leaves room for about one more chart bar.
+// The cost: with many players the names switch to initials sooner than they did with the
+// 260px voting reserve, in both phases, because the reserve holds while voting too.
+const CONTROLS_RESERVED_WIDTH = 680;
 
 // The players strip, at the top of the Ticket pane: the pills left-aligned, the round controls
 // at the right. At lg it sticks to the top of the pane while the ticket scrolls under it, with
 // a fixed height so it never grows. Below lg it is not sticky and wraps.
-export function Players({ players, phase, meId, disabled, onReveal, onReset }: Props) {
+export function Players({ players, phase, meId, disabled, results, onReveal, onReset }: Props) {
   const revealed = phase === "revealed";
   const outliers = findOutliers(players, revealed);
   const connected = players.filter((p) => p.connected);
@@ -175,8 +190,8 @@ export function Players({ players, phase, meId, disabled, onReveal, onReset }: P
         {pills(compact)}
       </Box>
       {/* The cell's min-width reserves the room at lg, so the pills never get more than the row
-          minus the reserve. It is a block below lg so the controls wrap rather than push the
-          page into a horizontal scroll. */}
+          minus the reserve. Below lg it takes its own line under the pills, and RoundControls
+          wraps inside it, so the results never push the page into a horizontal scroll. */}
       <Box
         ref={controlsRef}
         sx={{
@@ -192,6 +207,7 @@ export function Players({ players, phase, meId, disabled, onReveal, onReset }: P
           votedCount={votedCount}
           connectedCount={connected.length}
           disabled={disabled}
+          results={results}
           onReveal={onReveal}
           onReset={onReset}
         />

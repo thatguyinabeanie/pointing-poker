@@ -26,8 +26,8 @@ interface Args {
   deck: readonly string[];
 }
 
-// The points shown in the results pill's select: the suggestion, or the viewer's manual pick for
-// this ticket and round. Only the pill calls it, and the pill exists only after the reveal, so
+// The points shown in the round results' select: the suggestion, or the viewer's manual pick for
+// this ticket and round. Only RoundResults calls it, and it is mounted only after the reveal, so
 // there is no phase to check: a pick from an earlier round fails the round check instead.
 export function usePointsPick({ round, ticketKey, stats, deck }: Args): {
   points: string;

@@ -12,8 +12,8 @@ import { LeftPanel } from "./components/LeftPanel.tsx";
 import { type Notice, NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
-import { ResultsPill } from "./components/ResultsPill.tsx";
 import { RoomSwitch } from "./components/RoomSwitch.tsx";
+import { RoundResults } from "./components/RoundResults.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
 
@@ -164,6 +164,20 @@ export function App() {
               phase={snapshot.phase}
               meId={me?.userId ?? null}
               disabled={disabled}
+              // Shown by RoundControls only after the reveal, so it mounts (and picks its
+              // points) at each reveal.
+              results={
+                <RoundResults
+                  round={snapshot.round}
+                  stats={snapshot.stats}
+                  ticket={snapshot.ticket}
+                  deck={DECK}
+                  disabled={disabled}
+                  jiraSave={snapshot.jiraSave}
+                  onSave={onSave}
+                  onNext={onNext}
+                />
+              }
               onReveal={onReveal}
               onReset={onReset}
             />
@@ -171,29 +185,15 @@ export function App() {
           </>
         }
         floating={
-          // Layout lays these out as one group (stacked or in a row) and lets clicks through
-          // the empty space around them.
-          <>
-            <Hand
-              deck={DECK}
-              selected={selected}
-              disabled={disabled || snapshot.phase === "idle"}
-              onSelect={onSelect}
-              onClear={onClear}
-            />
-            {snapshot.phase === "revealed" && (
-              <ResultsPill
-                round={snapshot.round}
-                stats={snapshot.stats}
-                ticket={snapshot.ticket}
-                deck={DECK}
-                disabled={disabled}
-                jiraSave={snapshot.jiraSave}
-                onSave={onSave}
-                onNext={onNext}
-              />
-            )}
-          </>
+          <Hand
+            deck={DECK}
+            selected={selected}
+            disabled={disabled || snapshot.phase === "idle"}
+            // Offline wins over idle: a disconnected room cannot start a round either.
+            disabledHint={disabled ? "Reconnecting…" : "Start a round to vote"}
+            onSelect={onSelect}
+            onClear={onClear}
+          />
         }
       />
     );

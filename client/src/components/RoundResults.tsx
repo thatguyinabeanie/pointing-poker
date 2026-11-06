@@ -27,9 +27,20 @@ interface Props {
 const BAR_WIDTH = 16;
 const BAR_MAX_HEIGHT = 18;
 
+// The Points select's input is 32px tall instead of the small size's 40px, so it fits the 52px
+// strip with room for the floating label above it. 23px of text (16px at line-height 1.4375em)
+// plus 4.5px top and bottom. Two classes in the selector beat the input's own one-class padding.
+const COMPACT_SELECT_SX = {
+  "& .MuiSelect-select": { paddingTop: "4.5px", paddingBottom: "4.5px" },
+} as const;
+
 // The results after the reveal, with the controls that act on them: the points select, Save and
-// Next. Rendered only in the revealed phase, so it returns nothing without stats.
-export function ResultsPill({
+// Next. They sit in the players strip (user ruling, 11/06/2026: the floating pill "would be better
+// if it was on the same bar as the names with point cards"), so this renders a fragment and
+// RoundControls lays the items out in its own row, with Reset after Next. One row means Reset
+// wraps along with the rest below lg. RoundControls renders it only in the revealed phase, and it
+// returns nothing without stats.
+export function RoundResults({
   round,
   stats,
   ticket,
@@ -71,36 +82,27 @@ export function ResultsPill({
     <Chip size="small" variant="outlined" label="No numeric votes" />
   );
 
-  // Wraps below lg so the chart, text and controls stay on screen at a 320px viewport instead of
-  // pushing the page into a horizontal scroll. The pill keeps its own max width for the same reason.
   return (
-    <Box
-      data-results
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexWrap: { xs: "wrap", lg: "nowrap" },
-        gap: 1.5,
-        rowGap: 1,
-        maxWidth: "100%",
-        mb: "16px",
-        px: 2,
-        py: 1,
-        bgcolor: "common.white",
-        borderRadius: "14px",
-        boxShadow: "0 4px 18px rgba(0, 0, 0, 0.15)",
-        whiteSpace: "nowrap",
-      }}
-    >
+    <>
       <VoteChart counts={stats.counts} />
-      <Typography variant="body2">
+      <Typography variant="body2" sx={{ whiteSpace: "nowrap" }}>
         Avg <strong>{stats.average ?? "–"}</strong> · Median <strong>{stats.median ?? "–"}</strong>
       </Typography>
       {chip}
       <FormControl size="small" sx={{ minWidth: 96 }} disabled={disabled}>
-        <InputLabel id={labelId}>Points</InputLabel>
-        <Select labelId={labelId} label="Points" value={points} onChange={onPointsChange}>
+        {/* Always shrunk, with the outline always notched: unshrunk, the label is placed for a
+            40px input and would sit low in the 32px one when there is no suggestion. */}
+        <InputLabel id={labelId} shrink>
+          Points
+        </InputLabel>
+        <Select
+          labelId={labelId}
+          label="Points"
+          notched
+          value={points}
+          onChange={onPointsChange}
+          sx={COMPACT_SELECT_SX}
+        >
           {numericDeck.map((card) => (
             <MenuItem key={card} value={card}>
               {card}
@@ -110,7 +112,8 @@ export function ResultsPill({
       </FormControl>
       <Button
         variant="contained"
-        // The visible text is short to fit the pill; the accessible name keeps the target.
+        size="small"
+        // The visible text is short to fit the strip; the accessible name keeps the target.
         aria-label="Save to Jira"
         disabled={disabled || !canSave}
         onClick={onSaveClick}
@@ -118,10 +121,10 @@ export function ResultsPill({
       >
         Save
       </Button>
-      <Button variant="outlined" disabled={disabled} onClick={onNext}>
+      <Button variant="outlined" size="small" disabled={disabled} onClick={onNext}>
         Next
       </Button>
-    </Box>
+    </>
   );
 }
 

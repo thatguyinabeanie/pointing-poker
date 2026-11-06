@@ -42,8 +42,8 @@ no observers, no room codes. Jira write-back (Story Points) is in v1.
   description in the center (42%: key, summary, meta chips, Jira-rendered description), and the
   comments on the right (33%, oldest first). There is no bottom bar (decision 51): the
   participants and the round buttons are a strip at the top of the ticket pane, the vote cards are
-  a hand that peeks at the bottom edge and fans out on hover, and after the reveal a floating
-  results pill holds the stats, the points select, Save and Next. There is no phone layout.
+  a hand that peeks at the bottom edge and fans out on hover, and after the reveal the same strip
+  holds the stats, the points select, Save and Next. There is no phone layout.
 - Only one replica may run. Two instances would each hold their own rooms.
 
 ## Runtime components
@@ -153,7 +153,7 @@ pointing-poker/
         ParticipantChips.tsx  Chips with vote status (icon before reveal, value after), offline dimmed
         Players.tsx           players strip at the top of the ticket pane, with RoundControls.tsx (Reveal, Reset)
         Hand.tsx              toolbar of 11 cards, peek at the bottom edge, arc on hover, click selected card = clear vote
-        ResultsPill.tsx       after reveal: chart, Avg and Median, chip, Points Select, Save to Jira, Next
+        RoundResults.tsx      after reveal, in the strip: chart, Avg and Median, chip, Points Select, Save to Jira, Next
         NoticeSnackbar.tsx    Snackbar+Alert (top center) keyed on the notice object
   server/
     index.ts                  reads env, buildApp(), listen 0.0.0.0:PORT (default 3838), SIGTERM

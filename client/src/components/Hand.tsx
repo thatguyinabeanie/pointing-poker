@@ -21,6 +21,9 @@ interface Props {
   deck: readonly string[];
   selected: string | null;
   disabled: boolean;
+  // The toolbar's title while disabled, so hovering the peek says why it is off: App passes
+  // "Start a round to vote" in idle and "Reconnecting…" while the socket is down.
+  disabledHint: string;
   onSelect: (card: string) => void;
   onClear: () => void;
 }
@@ -37,9 +40,10 @@ const ROOT_HEIGHT = PEEK + SELECTED_RAISE;
 const ZONE_SIDE_MARGIN = 130;
 // The arc rises from the cards' rest position, whose bottom edge is this far below the window.
 const REST_BOTTOM = PEEK - CARD_HEIGHT;
-// The arc is centered on the hand, which is not centered on the window once the pill sits beside
-// it. So the room is twice the distance to the nearer window edge, minus 16px on each side (spec:
-// narrow screens). The root is measured, never the cards, so the open transforms cannot feed back.
+// The arc is centered on the hand, which at lg is centered on the Ticket column (and clamped inside
+// the window), not on the window. So the room is twice the distance to the nearer window edge,
+// minus 16px on each side (spec: narrow screens). The root is measured, never the cards, so the
+// open transforms cannot feed back.
 function availableWidth(root: HTMLElement | null): number {
   if (!root) return window.innerWidth - 32;
   const rect = root.getBoundingClientRect();
@@ -92,17 +96,16 @@ const CARD_SX: SxProps<Theme> = (theme) => {
       "transform 300ms cubic-bezier(0.2, 0.8, 0.3, 1.15), font-size 200ms, padding 200ms, background-color 150ms",
     // The stagger deals the arc from the middle out. A variable, so the hover rule can drop it.
     transitionDelay: "var(--delay)",
+    // Your vote keeps deck-order stacking, open and closed, like every card: no zIndex of its own.
+    // Each card's corner index is in the strip at its left edge, which the next card never covers,
+    // so the raised vote's index shows without being put on top. Put on top (the old zIndex 2 in
+    // the closed peek), it covered the next card's index instead; open, it covered the next card's
+    // value when the arc narrowed (PR #9 review). Hover and focus still come forward (zIndex 3).
     "&[aria-pressed='true']": {
       bgcolor: "primary.main",
       color: "primary.contrastText",
       borderColor: "primary.main",
     },
-    // Raised only in the closed peek, so your vote shows above its neighbors. Open, the arc's
-    // deck-order stacking must hold: the value padding assumes each later card covers the one
-    // before, and a raised vote would cover the next card's value when the arc narrows (PR #9
-    // review). Hover and focus still win with zIndex 3, since the card you point at comes forward.
-    // Not while disabled, where the vote is drawn like every other card.
-    "[data-hand-open='false'] &[aria-pressed='true']:enabled": { zIndex: 2 },
     // A steady hand when you cannot vote (user ruling, 11/06/2026): the old 0.5 opacity showed
     // light gray outlines that read as a rendering glitch. The cards stay solid, only the values
     // dim, and this comes after the pressed rule so an offline vote dims too.
@@ -137,7 +140,7 @@ const HINT_SX: SxProps<Theme> = {
 
 // The vote cards: a small fan peeking up from the bottom edge, dealt into an arc on hover or
 // keyboard focus. Open and close rules are in spec section 2; the playtest mock shows the feel.
-export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
+export function Hand({ deck, selected, disabled, disabledHint, onSelect, onClear }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpenState] = useState(false);
   // Event handlers read the latest value before React re-renders, so it is mirrored in a ref.
@@ -174,23 +177,19 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
   }, [disabled, setOpen]);
 
   const measureStep = useCallback(() => setAvailable(availableWidth(rootRef.current)), []);
-  // The hand moves without a window resize when the pill appears or goes (the floating row changes
-  // size), for example a reveal from another tab while the arc is open. Layout re-centers the
-  // group from its own observer, so the measure waits a frame for that to land. A drag of the
-  // Ticket column moves the hand too, but the arc is closed then and opening measures again.
+  // A window resize moves the hand: Layout re-centers it from its own resize listener, so the
+  // measure waits a frame for that to land. A drag of the Ticket column moves the hand too, but the
+  // arc is closed then and opening measures again. Nothing else moves it now that the floating
+  // group is only the hand (the results pill used to resize the group at the reveal).
   useEffect(() => {
-    const row = rootRef.current?.parentElement;
     let frame = 0;
     const later = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(measureStep);
     };
-    const observer = new ResizeObserver(later);
-    if (row) observer.observe(row);
     window.addEventListener("resize", later);
     return () => {
       cancelAnimationFrame(frame);
-      observer.disconnect();
       window.removeEventListener("resize", later);
     };
   }, [measureStep]);
@@ -354,7 +353,10 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
   }, []);
 
   const middle = (deck.length - 1) / 2;
-  // Wide enough to hold the resting fan, so nothing beside the hand sits under its end cards.
+  // As wide as the resting fan (256px for 11 cards). Nothing sits beside the hand any more, but
+  // the width still matters: Layout's clamp keeps the group's box 16px inside the window, so a
+  // narrower root would let the end cards run past the edge, and the closed hover zone (the root
+  // plus 20px a side) would stop short of them.
   const rootWidth = 2 * Math.ceil(restHalfWidth(deck.length));
   const selectedIndex = selected === null ? -1 : deck.indexOf(selected);
   // One tab stop: the card with focus, else your vote, else the middle card (5).
@@ -387,7 +389,7 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
       // A toolbar has no disabled attribute, so aria-disabled tells assistive technology that its
       // cards are off. The title is on the root so hovering anywhere on the peek explains it.
       aria-disabled={disabled || undefined}
-      title={disabled ? "Start a round to vote" : undefined}
+      title={disabled ? disabledHint : undefined}
       onClick={onClick}
       onPointerEnter={onHover}
       onPointerMove={onHover}
@@ -405,9 +407,6 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
         width: rootWidth,
         height: ROOT_HEIGHT,
         flex: "none",
-        // Above the faded pill, which is later in the DOM and gets its own stacking context from
-        // its opacity, so it would otherwise veil the open arc's right-end cards.
-        zIndex: 1,
         "&::before": {
           content: '""',
           position: "absolute",

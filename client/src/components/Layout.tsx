@@ -13,9 +13,9 @@ interface Props {
   floating: ReactNode;
 }
 
-// The floating group (the hand and the results pill) is fixed to the bottom of the window, so it
-// takes no space in the page. Layout measures it into a CSS variable. Each pane's card ends in a
-// spacer of that height plus the fade, so the last line of a long ticket scrolls clear of the
+// The floating group (the hand of cards, in every phase) is fixed to the bottom of the window, so
+// it takes no space in the page. Layout measures it into a CSS variable. Each pane's card ends in
+// a spacer of that height plus the fade, so the last line of a long ticket scrolls clear of the
 // group. The panes' height stops at the header and the top padding, because the group floats over
 // their bottom edge.
 const FLOATING_HEIGHT_VAR = "--floating-height";
@@ -27,8 +27,12 @@ const TICKET_WIDTH_VAR = "--ticket-width";
 // The least room kept between the floating group and either side of the window.
 const FLOATING_EDGE = 16;
 // How far above the floating group the fade band starts. Text fades out over this distance
-// instead of running up against the cards and the pill.
+// instead of running up against the cards. The panes' bottom spacer, the page's bottom padding
+// below lg and both focus scroll paddings all add it, so they all clear the whole band.
 const FADE_HEIGHT = 24;
+// The band's full height: the group plus the fade. One expression, so the band and everything
+// that must clear it cannot disagree.
+const BAND_HEIGHT = `calc(var(${FLOATING_HEIGHT_VAR}, 0px) + ${FADE_HEIGHT}px)`;
 const PAGE_TOP_PADDING = 16;
 const PANE_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - ${PAGE_TOP_PADDING}px)`;
 
@@ -59,14 +63,15 @@ function validateWidth(value: unknown): number | null {
 // Scroll padding: scrolling a focused element into view stops at the pane's edge, so a focused
 // link could land under the floating group at the bottom, or under a sticky header at the top
 // (`stickyTop`, the players strip in the Ticket pane), and be hidden (WCAG 2.4.11). The padding
-// makes the browser stop short of both.
+// makes the browser stop short of both. At the bottom it is the whole fade band, not only the
+// group: an element stopped inside the band's top 24px came out washed out (review, 11/06/2026).
 const PANE_SX: SxProps<Theme> = (theme) => ({
   [theme.breakpoints.up("lg")]: {
     height: PANE_HEIGHT,
     overflowY: "auto",
     display: "flex",
     flexDirection: "column",
-    scrollPaddingBottom: `var(${FLOATING_HEIGHT_VAR}, 0px)`,
+    scrollPaddingBottom: BAND_HEIGHT,
     // A variable, so this sx is built once for both panes.
     scrollPaddingTop: "var(--sticky-top, 0px)",
     // Grows, never shrinks, so a long ticket still scrolls instead of being squeezed.
@@ -74,7 +79,7 @@ const PANE_SX: SxProps<Theme> = (theme) => ({
     "& > :last-child::after": {
       content: '""',
       display: "block",
-      height: `calc(var(${FLOATING_HEIGHT_VAR}, 0px) + ${FADE_HEIGHT}px)`,
+      height: BAND_HEIGHT,
     },
   },
 });
@@ -100,10 +105,11 @@ function Pane({
   );
 }
 
-// The fade band (user ruling, 11/06/2026). With nothing behind them, the hand and the pill floated
-// over the ticket text, which ran right up to them and looked cluttered. The band fades the text
-// out over FADE_HEIGHT and is solid behind the group. At lg it spans the Ticket column, the one
-// the group is centered on; below lg the window. It shares the group's zIndex and comes first in
+// The fade band (user ruling, 11/06/2026). With nothing behind it, the hand floated over the
+// ticket text, which ran right up to it and looked cluttered. The band fades the text out over
+// FADE_HEIGHT and is solid behind the group. At lg it spans the Ticket column, the one the group
+// is centered on; below lg the window. Its height follows the hand alone, so it does not change
+// at the reveal. It shares the group's zIndex and comes first in
 // the DOM, so it paints above the panes but under the group, and under the app bar's menus. It
 // never takes a click.
 const FADE_BAND_SX: SxProps<Theme> = (theme) => ({
@@ -111,7 +117,7 @@ const FADE_BAND_SX: SxProps<Theme> = (theme) => ({
   bottom: 0,
   left: { xs: 0, lg: `var(${TICKET_LEFT_VAR}, 0px)` },
   width: { xs: "100%", lg: `var(${TICKET_WIDTH_VAR}, 100%)` },
-  height: `calc(var(${FLOATING_HEIGHT_VAR}, 0px) + ${FADE_HEIGHT}px)`,
+  height: BAND_HEIGHT,
   zIndex: theme.zIndex.appBar,
   pointerEvents: "none",
   background: `linear-gradient(to bottom, ${alpha(theme.palette.background.paper, 0)}, ${theme.palette.background.paper} ${FADE_HEIGHT}px)`,
@@ -144,9 +150,11 @@ export function Layout({ left, main, floating }: Props) {
   //
   // At lg the group centers on the Ticket column, not the window. The column's box changes size
   // whenever the resize handle or the window moves it, so observing it keeps the group in place.
-  // The center is clamped so the whole group stays FLOATING_EDGE inside the window: centered on a
-  // right-hand column at 1300px, the revealed pill ran past the right edge. Below lg the CSS
-  // falls back to 50% of the window.
+  // The center is clamped so the whole group stays FLOATING_EDGE inside the window. It was needed
+  // when the results pill made the group about 874px wide (it ran past the right edge at 1300px);
+  // with the 256px hand alone it is a safeguard, and Hand still measures where the hand actually
+  // is rather than assuming the column's center. Below lg the CSS falls back to 50% of the
+  // window.
   useLayoutEffect(() => {
     const floatingBox = floatingRef.current;
     const column = ticketColumnRef.current;
@@ -154,11 +162,11 @@ export function Layout({ left, main, floating }: Props) {
     if (!floatingBox || !column || !container) return;
     const publish = () => {
       const group = floatingBox.getBoundingClientRect();
-      const height = `${Math.round(group.height)}px`;
-      container.style.setProperty(FLOATING_HEIGHT_VAR, height);
+      const height = Math.round(group.height);
+      container.style.setProperty(FLOATING_HEIGHT_VAR, `${height}px`);
       // Below lg the page itself scrolls, and html cannot read the Container's variable, so the
-      // focus scroll padding (see Pane) is written to html directly.
-      document.documentElement.style.scrollPaddingBottom = height;
+      // focus scroll padding (see Pane) is written to html directly, with the fade band's height.
+      document.documentElement.style.scrollPaddingBottom = `${height + FADE_HEIGHT}px`;
       const rect = column.getBoundingClientRect();
       container.style.setProperty(TICKET_LEFT_VAR, `${Math.round(rect.left)}px`);
       container.style.setProperty(TICKET_WIDTH_VAR, `${Math.round(rect.width)}px`);
@@ -208,7 +216,7 @@ export function Layout({ left, main, floating }: Props) {
         pt: `${PAGE_TOP_PADDING}px`,
         // Below lg the page scrolls, so its end clears the floating group and the fade above it.
         // At lg the panes do it.
-        pb: { xs: `calc(${FADE_HEIGHT}px + var(${FLOATING_HEIGHT_VAR}, 0px))`, lg: 0 },
+        pb: { xs: BAND_HEIGHT, lg: 0 },
         display: "flex",
         flexDirection: "column",
         boxSizing: "border-box",
@@ -266,30 +274,10 @@ export function Layout({ left, main, floating }: Props) {
           transform: "translateX(-50%)",
           zIndex: (theme) => theme.zIndex.appBar,
           // A fixed box with left and translateX(-50%) shrink-to-fits into only the space to the
-          // right of left, so a group centered far right wrapped the deck onto two rows. The cap
-          // keeps 16px on each side, so the wrapped pill below lg never touches the window edges.
+          // right of left (a group centered far right once wrapped the deck onto two rows). Close
+          // to the right edge the box could come out narrower than the hand, which would throw
+          // off both the centering and the clamp's width; max-content keeps it the hand's width.
           width: "max-content",
-          maxWidth: `calc(100vw - ${2 * FLOATING_EDGE}px)`,
-          display: "flex",
-          // Side by side, the hand, the gap and the pill need about 874px. Below md that does
-          // not fit, and between md and lg the group centers on the window with the hand at its
-          // left end, so the arc squeezed to a step of about 20px at 900px. Below lg the pill
-          // stacks above the hand, so the hand stays at the bottom edge, centered. From lg the
-          // group centers on the Ticket column, clamped inside the window.
-          flexDirection: { xs: "column-reverse", lg: "row" },
-          alignItems: { xs: "center", lg: "flex-end" },
-          gap: "20px",
-          // The box spans the group's width but is mostly empty (the gap, the space above the
-          // shorter item); clicks there must reach the ticket beneath. The items opt back in.
-          pointerEvents: "none",
-          "& > *": { pointerEvents: "auto" },
-          // The open arc overlaps the pill's left end, so the pill fades and lets clicks through
-          // while you pick. Hand marks itself data-hand-open and ResultsPill data-results.
-          "& [data-results]": { transition: "opacity 200ms" },
-          "&:has([data-hand-open='true']) [data-results]": {
-            opacity: 0.15,
-            pointerEvents: "none",
-          },
         }}
       >
         {floating}
