@@ -14,7 +14,7 @@
 |---|---|
 | Scope | Whole room. Stored in `QueueSettings`, applied in the Jira query |
 | Selection | Several epics, checkbox menu like Type. Empty = all epics |
-| Menu list | Open epics of the project (not Done) |
+| Menu list | ~~Open epics of the project (not Done)~~ Replaced 11/06/2026 (Task 3): epics that have tickets needing points |
 | "No epic" option | Not now |
 | Placement | Header, after Type, before Refresh |
 
@@ -132,4 +132,22 @@ Use whatever the existing import names are for the Jira `Result` type and the ga
 
 - [ ] **Step 4: Docs.** `08-decision-log.md` entry 52, "Epic filter (11/06/2026)", in the format of entry 50: the user's choices from the decision table, why it is in the JQL (cap and counts after filtering), why only known keys are kept (Jira 400), the project-change and closed-epic rules, the failed-list behavior, search stays unfiltered, the menu sends once on close through the shared hook, the 130px header cap, and that it shipped in the same PR as decision 51. Add a row to "Where each decision is specified" if entry 50 has one. `03-client.md`: the Epic select, `useRoomMultiSelect`, and the header widths, next to the Type select text.
 
-- [ ] **Step 5: Gate, commit, push.** Gate expected: all four exit 0. Browser check (controller): the Epic menu lists open epics with color dots; picking two and closing refetches once in both tabs; Type + Epic narrow together with matching counts; a project change clears the Epic filter and reloads the menu; search still finds tickets outside the selected epics; the header is one row at 1200px and 1440px and wraps cleanly at phone width.
+- [ ] **Step 5: Gate, commit, push.** Gate expected: all four exit 0. Browser check (controller): the Epic menu lists the epics (see Task 3) with color dots; picking two and closing refetches once in both tabs; Type + Epic narrow together with matching counts; a project change clears the Epic filter and reloads the menu; search still finds tickets outside the selected epics; the header is one row at 1200px and 1440px and wraps cleanly at phone width.
+
+### Task 3: The menu lists the epics that have tickets needing points
+
+Why: the controller's browser check on 11/06/2026 found that CIVIS has more than 100 open epics. The first 100 by rank did not include the epics of the tickets in the queue (the "AWS Quick Sight" epics), so they could not be picked. The user chose (11/06/2026) to list only the epics that have tickets still needing points.
+
+**Files:**
+- Modify: `server/jira.ts` (`listEpics` and its JQL; `MAX_EPICS`)
+- Modify: `server/ws.ts` (when the epic list is fetched)
+- Modify: `docs/spec/02-server.md`, `docs/spec/03-client.md`, `docs/spec/08-decision-log.md` (decision 52)
+
+**Interfaces:**
+- Changes: `listEpics(settings: QueueSettings): Promise<Result<QueueEpic[]>>`. It takes the room's settings instead of a project key, because the list depends on the Type filter.
+- Unchanged: `Snapshot.epics`, `QueueSettings.epicKeys`, `setEpics`, `keepKnown`, the queue's `parent in (...)` clause, and the whole client.
+
+- [ ] **Step 1: New list query.** `project = <jqlQuote(key)> AND <the queue's needs-pointing clause with the Type filter, without the Epic filter> AND parent is not EMPTY ORDER BY Rank ASC`. Request only the `parent` field. Page through the results up to `MAX_EPIC_SCAN = 1000` tickets, so a large queue still finds every epic. Collect each distinct epic-level parent with the existing `parseEpic`, which skips a sub-task's story parent. Keep the order of first appearance, which is rank order. Color the epics with `epicColors`. Share the needs-pointing clause with `searchQueue` through one helper, so the two cannot drift apart. No cache: the list must follow the queue. Remove `MAX_EPICS` and the `issuetype = Epic` query.
+- [ ] **Step 2: When it runs.** Fetch the epic list with every queue fetch, through the existing `filterListFetcher`, because the list changes when tickets are pointed and when the Type filter changes. Keep the stale guards. A selected epic whose tickets are all pointed drops out of the list, so `setEpics` drops it and the queue refetches once. That is wanted, because there is nothing left to point in it. Make sure this cannot loop: the second queue fetch yields the same list, and `sameNames` stops it.
+- [ ] **Step 3: Docs.** Decision 52 says the user replaced "open epics of the project" on 11/06/2026, and why (more than 100 open epics in CIVIS, and the queue's epics missing). Update 02-server.md (the query, the scan cap, when it runs) and the menu text in 03-client.md. The menu is no longer disabled for a project with no "Epic" type. It is disabled when no ticket needing points has an epic.
+- [ ] **Step 4: Gate, commit, push.** Gate expected: all four exit 0. Browser check (controller): the AWS Quick Sight epics appear in the menu and can be picked; the queue filters in both tabs; pointing the last ticket of a selected epic drops it from the menu and the queue widens.
