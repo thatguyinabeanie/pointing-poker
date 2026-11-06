@@ -7,6 +7,7 @@ import type {
   JiraSave,
   Phase,
   PlayerView,
+  QueueEpic,
   QueueSection,
   QueueSettings,
   QueueState,
@@ -34,6 +35,7 @@ export interface GameState {
   boards: JiraBoard[];
   // The project's issue type names (the Type menu), not the selection in queueSettings.
   issueTypes: string[];
+  epics: QueueEpic[];
   // Newest first. Lives in memory only, so a restart clears it.
   history: SessionHistoryEntry[];
   // Room-wide switch, kept across rounds and tickets (newRound spreads state). Only a server
@@ -64,11 +66,13 @@ export function createInitialState(opts: { defaultProjectKey?: string | null } =
       projectKey: opts.defaultProjectKey ?? null,
       boardId: null,
       issueTypes: [],
+      epicKeys: [],
     },
     queue: { sections: [], loading: false, error: null, fetchedAt: null },
     projects: [],
     boards: [],
     issueTypes: [],
+    epics: [],
     history: [],
     autoReveal: true,
     autoAdvance: false,
@@ -304,23 +308,31 @@ export function setQueueSettings(state: GameState, partial: Partial<QueueSetting
     // Only names from the project's own list: Jira answers 400 to `issuetype in (...)` with an
     // unknown name, so a selection sent for the previous project would fail the whole queue.
     // With no list loaded every name is dropped, which leaves the queue unfiltered.
-    const known = new Set(state.issueTypes);
-    next.issueTypes = [...new Set(partial.issueTypes)].filter((name) => known.has(name));
+    next.issueTypes = keepKnown(partial.issueTypes, state.issueTypes);
+  }
+  if (partial.epicKeys !== undefined) {
+    // Same rule for epics: Jira answers 400 to `parent in (...)` with an unknown key.
+    next.epicKeys = keepKnown(
+      partial.epicKeys,
+      state.epics.map((epic) => epic.key),
+    );
   }
 
   const projectChanged = next.projectKey !== state.queueSettings.projectKey;
   // A board belongs to one project, so a project change always drops the board, even if
   // the same message also named one (that id was picked from the old project's list).
-  // Issue types are per project too, so the type filter is dropped in the same place.
+  // Issue types and epics are per project too, so both filters are dropped in the same place.
   if (projectChanged) {
     next.boardId = null;
     next.issueTypes = [];
+    next.epicKeys = [];
   }
 
   const changed =
     projectChanged ||
     next.boardId !== state.queueSettings.boardId ||
-    !sameNames(next.issueTypes, state.queueSettings.issueTypes);
+    !sameNames(next.issueTypes, state.queueSettings.issueTypes) ||
+    !sameNames(next.epicKeys, state.queueSettings.epicKeys);
   if (!changed) return ok(state);
 
   return ok({
@@ -328,8 +340,15 @@ export function setQueueSettings(state: GameState, partial: Partial<QueueSetting
     queueSettings: next,
     boards: projectChanged ? [] : state.boards,
     issueTypes: projectChanged ? [] : state.issueTypes,
+    epics: projectChanged ? [] : state.epics,
     queue: { ...state.queue, loading: true },
   });
+}
+
+// The selected values that are in the known list, deduplicated, in selection order.
+function keepKnown(selected: readonly string[], known: Iterable<string>): string[] {
+  const knownSet = new Set(known);
+  return [...new Set(selected)].filter((value) => knownSet.has(value));
 }
 
 export function setQueueLoading(state: GameState): Result {
@@ -365,15 +384,33 @@ export function setBoards(state: GameState, boards: JiraBoard[]): Result {
 // wipe the room's filter (a failed fetch never reaches here at all).
 export function setIssueTypes(state: GameState, types: string[]): Result {
   if (types.length === 0) return ok({ ...state, issueTypes: types });
-  const known = new Set(types);
   const selected = state.queueSettings.issueTypes;
-  const kept = selected.filter((name) => known.has(name));
+  const kept = keepKnown(selected, types);
   // Keeps the settings object (and the selection's click order) when nothing was dropped.
   const queueSettings =
     kept.length === selected.length
       ? state.queueSettings
       : { ...state.queueSettings, issueTypes: kept };
   return ok({ ...state, issueTypes: types, queueSettings });
+}
+
+// The Epic menu's mirror of setIssueTypes: it drops selected epics that are no longer listed (an
+// epic closed or deleted), because Jira answers 400 to `parent in (...)` with an unknown key and
+// every later queue fetch would fail. An empty list keeps the selection, so an empty answer cannot
+// wipe the room's filter (a failed fetch never reaches here at all).
+export function setEpics(state: GameState, epics: QueueEpic[]): Result {
+  if (epics.length === 0) return ok({ ...state, epics });
+  const selected = state.queueSettings.epicKeys;
+  const kept = keepKnown(
+    selected,
+    epics.map((epic) => epic.key),
+  );
+  // Keeps the settings object (and the selection's click order) when nothing was dropped.
+  const queueSettings =
+    kept.length === selected.length
+      ? state.queueSettings
+      : { ...state.queueSettings, epicKeys: kept };
+  return ok({ ...state, epics, queueSettings });
 }
 
 export function markSave(state: GameState, save: JiraSave): Result {
@@ -449,6 +486,7 @@ export function viewFor(state: GameState, viewerId: number): Snapshot {
     projects: state.projects,
     boards: state.boards,
     issueTypes: state.issueTypes,
+    epics: state.epics,
     history: state.history,
     autoReveal: state.autoReveal,
     autoAdvance: state.autoAdvance,

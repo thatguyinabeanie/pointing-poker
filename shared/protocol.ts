@@ -91,6 +91,8 @@ export interface QueueSettings {
   boardId: number | null;
   // Jira issue type names to keep in the queue. Empty means all types.
   issueTypes: string[];
+  // Issue keys of the epics to keep in the queue. Empty means all epics.
+  epicKeys: string[];
 }
 // The server maps Jira's raw color values into this fixed set, so the client never sees raw Jira values.
 export type EpicColor =
@@ -170,6 +172,8 @@ export interface Snapshot {
   boards: JiraBoard[];
   // The project's issue type names, in Jira's order, for the Type filter menu.
   issueTypes: string[];
+  // The project's open epics in rank order, for the Epic filter menu.
+  epics: QueueEpic[];
   // Newest first. Same list for every viewer.
   history: SessionHistoryEntry[];
   // Shared room state, same for every viewer.

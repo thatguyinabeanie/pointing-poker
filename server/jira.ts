@@ -36,6 +36,7 @@ export interface JiraClient {
   listProjects(): Promise<Result<JiraProject[]>>;
   listBoards(projectKey: string): Promise<Result<JiraBoard[]>>;
   listIssueTypes(projectKey: string): Promise<Result<string[]>>;
+  listEpics(projectKey: string): Promise<Result<QueueEpic[]>>;
   boardType(boardId: number): Promise<Result<string>>;
   searchQueue(settings: QueueSettings): Promise<Result<QueueSection[]>>;
   searchTickets(projectKey: string | null, query: string): Promise<Result<QueueItem[]>>;
@@ -67,6 +68,7 @@ const MAX_HISTORY_REQUESTS = 10;
 const LIST_CACHE_MS = 10 * 60 * 1000;
 const MAX_PROJECTS = 500;
 const MAX_BOARDS = 500;
+const MAX_EPICS = 100;
 const QUEUE_PAGE_SIZE = 50;
 const MAX_SPRINTS = 50;
 const SEARCH_PAGE_SIZE = 10;
@@ -725,6 +727,29 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     return { ok: true, value };
   }
 
+  // The Epic filter's menu: the project's open epics in rank order, capped at MAX_EPICS. Cached
+  // like the issue types. A project with no "Epic" issue type makes Jira answer 400 to this JQL;
+  // that failure is returned as it is, and the caller leaves the menu disabled.
+  async function listEpics(projectKey: string): Promise<Result<QueueEpic[]>> {
+    const cacheKey = `epics:${projectKey}`;
+    const cached = cacheGet<QueueEpic[]>(cacheKey);
+    if (cached) return { ok: true, value: cached };
+
+    const found = await searchIssues(
+      `project = ${jqlQuote(projectKey)} AND issuetype = Epic AND statusCategory != Done ORDER BY Rank ASC`,
+      MAX_EPICS,
+    );
+    if (!found.ok) return found;
+    const colors = await epicColors(found.value.items.map((item) => item.key));
+    const value: QueueEpic[] = found.value.items.map((item) => ({
+      key: item.key,
+      name: item.summary,
+      color: colors.get(item.key) ?? null,
+    }));
+    cachePut(cacheKey, value);
+    return { ok: true, value };
+  }
+
   // The board type decides how the queue is sectioned: scrum boards have sprints, kanban
   // boards do not. Cached like the other board lookups.
   async function boardType(boardId: number): Promise<Result<string>> {
@@ -764,12 +789,17 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     // counts (Untriaged and Backlog alike); a label filter used to hide unpointed Backlog
     // tickets, so it was removed (decision log, 10/15/2026).
     // The Type filter joins the clause here, so the board and no-board paths and the count all
-    // filter the same way, and the per-section cap applies after filtering (decision 50).
+    // filter the same way, and the per-section cap applies after filtering (decisions 50 and 52).
+    // The Epic filter is `parent in (...)`: an epic's children name it as their parent.
     const typeFilter =
       settings.issueTypes.length > 0
         ? ` AND issuetype in (${settings.issueTypes.map(jqlQuote).join(", ")})`
         : "";
-    const clause = `statusCategory != Done AND ${pointsField} is EMPTY${typeFilter}`;
+    const epicFilter =
+      settings.epicKeys.length > 0
+        ? ` AND parent in (${settings.epicKeys.map(jqlQuote).join(", ")})`
+        : "";
+    const clause = `statusCategory != Done AND ${pointsField} is EMPTY${typeFilter}${epicFilter}`;
 
     if (settings.boardId === null) {
       const found = await searchIssues(
@@ -1120,8 +1150,9 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     projectKey: string | null,
     query: string,
   ): Promise<Result<QueueItem[]>> {
-    // The room's Type filter is not applied here on purpose: search is one person's lookup, and
-    // it must still find any ticket, including one of a type the queue is hiding (decision 50).
+    // The room's Type and Epic filters are not applied here on purpose: search is one person's
+    // lookup, and it must still find any ticket, including one the queue is hiding (decisions 50
+    // and 52).
     const q = query.trim();
     if (q.length < MIN_QUERY_LENGTH) {
       return fail("query_too_short", `Type at least ${MIN_QUERY_LENGTH} characters to search.`);
@@ -1154,6 +1185,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     listProjects,
     listBoards,
     listIssueTypes,
+    listEpics,
     boardType,
     searchQueue,
     searchTickets,

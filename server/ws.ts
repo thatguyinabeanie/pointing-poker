@@ -39,6 +39,16 @@ const commandSchema = z.discriminatedUnion("type", [
         .optional(),
       boardId: z.number().int().positive().nullable().optional(),
       issueTypes: z.array(z.string().trim().min(1).max(64)).max(30).optional(),
+      epicKeys: z
+        .array(
+          z
+            .string()
+            .trim()
+            .regex(/^[A-Z][A-Z0-9_]*-\d+$/i)
+            .max(64),
+        )
+        .max(30)
+        .optional(),
     }),
   }),
   z.object({ type: z.literal("refreshQueue") }),
@@ -163,7 +173,6 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
   let errorId = 0;
   let queueSeq = 0;
   let boardsSeq = 0;
-  let issueTypesSeq = 0;
   let lastQueueRefreshAt = 0;
   let bootstrapped = false;
   const registry = new Map<number, Set<WebSocket>>();
@@ -281,29 +290,52 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
 
   // Runs wherever the boards are fetched for a project, with the same stale guard. A failure is
   // only logged: the list stays as it was (empty after a project change), which disables the
-  // Type menu and leaves the queue unfiltered, so there is nothing for the user to act on.
-  async function fetchIssueTypes(): Promise<void> {
-    const projectKey = state.queueSettings.projectKey;
-    if (projectKey === null) return;
-    const seq = ++issueTypesSeq;
-    const res = await jira.listIssueTypes(projectKey);
-    if (seq !== issueTypesSeq || state.queueSettings.projectKey !== projectKey) {
-      app.log.debug({ projectKey }, "dropped stale issue types result");
-      return;
-    }
-    if (!res.ok) {
-      app.log.warn({ reason: res.reason, projectKey }, "issue types fetch failed");
-      return;
-    }
-    const selectedBefore = state.queueSettings.issueTypes;
-    applyState(game.setIssueTypes(state, res.value));
-    broadcast();
-    // setIssueTypes drops selected types that Jira renamed or deleted. The queue was fetched with
-    // the old selection, so refetch it, as a Type filter change does. Awaited rather than handed
-    // to runAsync, which is per socket: this helper is room-level, and every caller already
-    // handles a throw (runAsync for commands, onThrow at bootstrap).
-    if (!sameNames(selectedBefore, state.queueSettings.issueTypes)) await fetchQueue();
+  // menu and leaves the queue unfiltered, so there is nothing for the user to act on. Each list
+  // keeps its own sequence counter, so a slow epic answer never discards a fresh type answer.
+  function filterListFetcher<T>(opts: {
+    label: string; // "issue types" | "epics", used in the debug and warn logs
+    load: (projectKey: string) => Promise<JiraResult<T[]>>;
+    apply: (state: game.GameState, list: T[]) => game.Result;
+    selected: (settings: QueueSettings) => string[];
+  }): () => Promise<void> {
+    let seq = 0;
+    return async () => {
+      const projectKey = state.queueSettings.projectKey;
+      if (projectKey === null) return;
+      const mySeq = ++seq;
+      const res = await opts.load(projectKey);
+      if (mySeq !== seq || state.queueSettings.projectKey !== projectKey) {
+        app.log.debug({ projectKey }, `dropped stale ${opts.label} result`);
+        return;
+      }
+      if (!res.ok) {
+        app.log.warn({ reason: res.reason, projectKey }, `${opts.label} fetch failed`);
+        return;
+      }
+      const selectedBefore = opts.selected(state.queueSettings);
+      applyState(opts.apply(state, res.value));
+      broadcast();
+      // The setter drops selected values that Jira renamed, closed or deleted. The queue was
+      // fetched with the old selection, so refetch it, as a filter change does. Awaited rather
+      // than handed to runAsync, which is per socket: this helper is room-level, and every caller
+      // already handles a throw (runAsync for commands, onThrow at bootstrap).
+      if (!sameNames(selectedBefore, opts.selected(state.queueSettings))) await fetchQueue();
+    };
   }
+
+  const fetchIssueTypes = filterListFetcher({
+    label: "issue types",
+    load: (projectKey) => jira.listIssueTypes(projectKey),
+    apply: (current, types) => game.setIssueTypes(current, types),
+    selected: (settings) => settings.issueTypes,
+  });
+
+  const fetchEpics = filterListFetcher({
+    label: "epics",
+    load: (projectKey) => jira.listEpics(projectKey),
+    apply: (current, epics) => game.setEpics(current, epics),
+    selected: (settings) => settings.epicKeys,
+  });
 
   // Resolves JIRA_DEFAULT_BOARD (numeric id or board name) against the default project's boards
   // and applies it before the first queue fetch. Any miss leaves boardId null so the queue works.
@@ -383,6 +415,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     void fetchProjectsOnce().catch(onThrow);
     // The queue does not wait for it: no filter can be set before the menu has types.
     void fetchIssueTypes().catch(onThrow);
+    void fetchEpics().catch(onThrow);
     // The queue waits for default board resolution so its first fetch uses the resolved board.
     void (async () => {
       if (defaultBoard === null) {
@@ -668,6 +701,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
           await fetchBoards();
         });
         runAsync(fetchIssueTypes);
+        runAsync(fetchEpics);
       }
       // Any effective change refetches, including a Type filter change on its own.
       runAsync(fetchQueue);
@@ -675,12 +709,13 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
 
     async function refreshProjects(): Promise<void> {
       // jira.ts caches both lists for 10 minutes and the protocol has no cache-bypass argument,
-      // so inside that window this re-sends the cached lists. The issue types are refreshed too,
-      // but never reported: fetchIssueTypes only logs its failures.
+      // so inside that window this re-sends the cached lists. The issue types and epics are refreshed too,
+      // but never reported: fetchIssueTypes and fetchEpics only log their failures.
       const [projectsFailure, boardsFailure] = await Promise.all([
         fetchProjectsOnce(),
         fetchBoards(),
         fetchIssueTypes(),
+        fetchEpics(),
       ]);
       const failure = projectsFailure ?? boardsFailure;
       if (failure) sendError(socket, failure.reason, failure.message);
