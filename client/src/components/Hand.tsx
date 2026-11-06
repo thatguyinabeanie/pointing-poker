@@ -8,7 +8,14 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { CARD_HEIGHT, CARD_WIDTH, cardPose, fitStep, openLift } from "../lib/handLayout.ts";
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  cardPose,
+  fitStep,
+  openLift,
+  restHalfWidth,
+} from "../lib/handLayout.ts";
 
 interface Props {
   deck: readonly string[];
@@ -24,8 +31,7 @@ const SELECTED_RAISE = 18; // your vote stands out in the peek
 const OPEN_SELECTED_RAISE = 8;
 const HOVER_LIFT = 12;
 const STAGGER_MS = 10;
-const ROOT_WIDTH = 120;
-// Tall enough for the raised card, so the panes' bottom padding clears the whole peek.
+// Tall enough for the raised card, so the panes' bottom spacer clears the whole peek.
 const ROOT_HEIGHT = PEEK + SELECTED_RAISE;
 // The mock's open hover zone reached 390px each side of the center at the full 52px step.
 const ZONE_SIDE_MARGIN = 130;
@@ -65,15 +71,19 @@ const CARD_SX: SxProps<Theme> = (theme) => {
     marginLeft: `${-CARD_WIDTH / 2}px`,
     boxSizing: "border-box",
     display: "grid",
-    placeItems: "start center",
-    padding: "5px 0 0",
+    // Closed, the value is a corner index, as on a fanned hand of real cards: each card covers
+    // the next one's middle, and only a strip at its left edge shows (see REST in handLayout).
+    // Line-height 1 keeps the ink near the corner, where the strip is widest.
+    placeItems: "start",
+    padding: "4px",
     border: `1px solid ${theme.palette.grey[400]}`,
     borderRadius: "6px",
     bgcolor: "background.paper",
     color: "text.primary",
     font: "inherit",
     fontWeight: 700,
-    fontSize: 13,
+    fontSize: 11,
+    lineHeight: 1,
     boxShadow: "0 2px 6px rgba(10, 33, 56, 0.18)",
     cursor: "pointer",
     userSelect: "none",
@@ -91,9 +101,18 @@ const CARD_SX: SxProps<Theme> = (theme) => {
     // deck-order stacking must hold: the value padding assumes each later card covers the one
     // before, and a raised vote would cover the next card's value when the arc narrows (PR #9
     // review). Hover and focus still win with zIndex 3, since the card you point at comes forward.
-    "[data-hand-open='false'] &[aria-pressed='true']": { zIndex: 2 },
-    "&:disabled": { cursor: "default" },
-    "[data-hand-open='true'] &": { placeItems: "center", paddingTop: 0, fontSize: 18 },
+    // Not while disabled, where the vote is drawn like every other card.
+    "[data-hand-open='false'] &[aria-pressed='true']:enabled": { zIndex: 2 },
+    // A steady hand when you cannot vote (user ruling, 11/06/2026): the old 0.5 opacity showed
+    // light gray outlines that read as a rendering glitch. The cards stay solid, only the values
+    // dim, and this comes after the pressed rule so an offline vote dims too.
+    "&:disabled": {
+      cursor: "default",
+      bgcolor: "background.paper",
+      color: "text.disabled",
+      borderColor: theme.palette.grey[400],
+    },
+    "[data-hand-open='true'] &": { placeItems: "center", padding: 0, fontSize: 18 },
     "[data-hand-open='true'] &:focus-visible": lifted,
     // Touch browsers keep :hover on the last tapped element, which left a card stuck lifted.
     "@media (hover: hover)": { "[data-hand-open='true'] &:hover": lifted },
@@ -335,6 +354,8 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
   }, []);
 
   const middle = (deck.length - 1) / 2;
+  // Wide enough to hold the resting fan, so nothing beside the hand sits under its end cards.
+  const rootWidth = 2 * Math.ceil(restHalfWidth(deck.length));
   const selectedIndex = selected === null ? -1 : deck.indexOf(selected);
   // One tab stop: the card with focus, else your vote, else the middle card (5).
   const tabStop = focusIndex ?? (selectedIndex >= 0 ? selectedIndex : Math.floor(middle));
@@ -349,7 +370,7 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
     CARD_WIDTH / 2,
     Math.min(ZONE_SIDE_MARGIN, available / 2 + 16 - middle * step),
   );
-  const zoneSide = isOpen ? ROOT_WIDTH / 2 - (middle * step + zoneMargin) : -20;
+  const zoneSide = isOpen ? rootWidth / 2 - (middle * step + zoneMargin) : -20;
   const zoneHeight = isOpen ? openLift(deck.length, step) + CARD_HEIGHT + 60 : ROOT_HEIGHT;
   // When the arc narrows, the next card covers the right of each card; center the value in the
   // part that still shows.
@@ -363,6 +384,10 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
         selected === null ? "Your cards, no vote" : `Your cards, current vote ${spoken(selected)}`
       }
       data-hand-open={isOpen ? "true" : "false"}
+      // A toolbar has no disabled attribute, so aria-disabled tells assistive technology that its
+      // cards are off. The title is on the root so hovering anywhere on the peek explains it.
+      aria-disabled={disabled || undefined}
+      title={disabled ? "Start a round to vote" : undefined}
       onClick={onClick}
       onPointerEnter={onHover}
       onPointerMove={onHover}
@@ -377,13 +402,12 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
       }
       sx={{
         position: "relative",
-        width: ROOT_WIDTH,
+        width: rootWidth,
         height: ROOT_HEIGHT,
         flex: "none",
         // Above the faded pill, which is later in the DOM and gets its own stacking context from
         // its opacity, so it would otherwise veil the open arc's right-end cards.
         zIndex: 1,
-        opacity: disabled ? 0.5 : 1,
         "&::before": {
           content: '""',
           position: "absolute",
@@ -398,7 +422,8 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
         const offset = index - middle;
         const isSelected = index === selectedIndex;
         const pose = cardPose(offset, isOpen, step);
-        const raise = isSelected ? (isOpen ? OPEN_SELECTED_RAISE : SELECTED_RAISE) : 0;
+        // Disabled, nothing lifts: an offline vote lies flat with the rest (see "&:disabled").
+        const raise = isSelected && !disabled ? (isOpen ? OPEN_SELECTED_RAISE : SELECTED_RAISE) : 0;
         const at = (up: number) =>
           `translate(${pose.x}px, ${pose.y - up}px) rotate(${pose.rotate}deg)`;
         return (
