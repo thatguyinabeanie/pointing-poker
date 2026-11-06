@@ -4,7 +4,14 @@ import { alpha, type SxProps, type Theme } from "@mui/material/styles";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { readJson, removeItem, writeJson } from "../storage.ts";
-import { HEADER_HEIGHT, STRIP_HEIGHT } from "./layoutConstants.ts";
+import {
+  CONTROLS_RESERVED_WIDTH,
+  HEADER_HEIGHT,
+  RESIZE_HANDLE_MARGIN,
+  RESIZE_HANDLE_WIDTH,
+  STRIP_COLUMN_GAP,
+  STRIP_HEIGHT,
+} from "./layoutConstants.ts";
 import { ResizeHandle } from "./ResizeHandle.tsx";
 
 interface Props {
@@ -37,12 +44,27 @@ const PAGE_TOP_PADDING = 16;
 const PANE_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - ${PAGE_TOP_PADDING}px)`;
 
 // The tickets pane (Queue and History) is one third of the row by default (the old lg 4/12 split), never narrower than
-// the minimum, never wider than half the row. The viewer's choice is stored in px and clamped
-// again on every render, so a stored value from a wider window cannot overflow a narrow one.
+// the minimum, never wider than half the row or than leaves the Ticket column its minimum. The
+// viewer's choice is stored in px and clamped again on every render, so a stored value from a
+// wider window cannot overflow a narrow one, and the drag (ResizeHandle's max) gets the same cap.
 const QUEUE_WIDTH_KEY = "pp.layout.queueWidth";
 const QUEUE_MIN_WIDTH = 260;
 const QUEUE_DEFAULT_FRACTION = 1 / 3;
 const QUEUE_MAX_FRACTION = 1 / 2;
+// Room for about two compact player pills (a 61px pill, an 8px gap and the list's 2px padding
+// come to 134px), with some left for a classic scrollbar in the Ticket pane.
+const MIN_PILL_AREA = 160;
+// The least the Ticket column may be, so the players strip stays one row (user ruling,
+// 11/06/2026): the strip does not wrap at lg, so a column narrower than the revealed controls
+// let them overflow it and left the pills no room at all once the queue was dragged wide at
+// 1200px. The column keeps the controls' reserve, the strip's gap and two compact pills; the
+// handle between the panes takes its own width and margins out of the row as well.
+const TICKET_MIN_WIDTH =
+  CONTROLS_RESERVED_WIDTH +
+  STRIP_COLUMN_GAP +
+  MIN_PILL_AREA +
+  RESIZE_HANDLE_WIDTH +
+  2 * RESIZE_HANDLE_MARGIN;
 
 function validateWidth(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
@@ -190,8 +212,13 @@ export function Layout({ left, main, floating }: Props) {
     };
   }, []);
 
-  // On a very narrow row the max could fall below the min; the min wins.
-  const maxWidth = Math.max(QUEUE_MIN_WIDTH, Math.round(rowWidth * QUEUE_MAX_FRACTION));
+  // Half the row, or less when that would squeeze the Ticket column below its minimum. On a row
+  // too narrow for both minimums (a row under 260 + 873 = 1133px, a window under about 1181px)
+  // the queue's min wins; that only happens below lg, where the panes stack and it is not used.
+  const maxWidth = Math.max(
+    QUEUE_MIN_WIDTH,
+    Math.min(Math.round(rowWidth * QUEUE_MAX_FRACTION), Math.floor(rowWidth - TICKET_MIN_WIDTH)),
+  );
   const defaultWidth = Math.min(
     maxWidth,
     Math.max(QUEUE_MIN_WIDTH, Math.round(rowWidth * QUEUE_DEFAULT_FRACTION)),
