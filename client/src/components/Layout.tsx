@@ -213,7 +213,7 @@ export function Layout({ left, main, floating }: Props) {
   }, []);
 
   // Half the row, or less when that would squeeze the Ticket column below its minimum. On a row
-  // too narrow for both minimums (a row under 260 + 873 = 1133px, a window under about 1181px)
+  // too narrow for both minimums (a row under 260 + 893 = 1153px, a window under about 1201px)
   // the queue's min wins; that only happens below lg, where the panes stack and it is not used.
   const maxWidth = Math.max(
     QUEUE_MIN_WIDTH,

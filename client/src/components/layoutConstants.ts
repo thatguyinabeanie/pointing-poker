@@ -22,12 +22,12 @@ export const STRIP_COLUMN_GAP = 16;
 // width. Layout also keeps the Ticket column wide enough for it (see TICKET_MIN_WIDTH there).
 //
 // The revealed controls are the widest, so they set it. Measured in Chrome (11/06/2026): 591px with
-// a one-bar chart and "Consensus", and 651px with a three-bar chart, "Avg 9.8 · Median 8",
-// "Spread 0.5–21" and Points. That is the worst case for any number of distinct votes, because
-// the chart is capped at 56px at lg (the three-bar width; see VoteChart), so 680 keeps 29px to
-// spare. Before the cap each distinct vote added a 20px bar and about five passed the reserve.
-// Not measured: longer Avg and Median text ("Avg 10.6 · Median 10.5") is estimated at about 28px
-// wider than the measured one, which would use nearly all of the spare room.
+// a one-bar chart and "Consensus", 651px with three bars, 665px with six distinct votes, and 686px
+// with four spread votes (0.5, 8, 13, 21), which give the widest stats text ("Avg 10.6 · Median
+// 10.5", "Spread 0.5–21") beside the capped chart. The last is the worst case, because the chart
+// is capped at 56px at lg (see VoteChart), so more distinct votes do not widen it. 700 is that 686
+// plus 14px of margin. Before the cap each distinct vote added a 20px bar and about five passed
+// the reserve.
 // The cost: with many players the names switch to initials sooner than they did with the old
 // 260px voting reserve, in both phases, because the reserve holds while voting too.
-export const CONTROLS_RESERVED_WIDTH = 680;
+export const CONTROLS_RESERVED_WIDTH = 700;
