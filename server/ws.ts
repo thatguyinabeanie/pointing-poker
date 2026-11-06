@@ -720,6 +720,16 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
       if (!result.ok || result.state === before) return;
       const projectChanged =
         result.state.queueSettings.projectKey !== before.queueSettings.projectKey;
+      const bq = before.queueSettings;
+      const aq = result.state.queueSettings;
+      // The epic scan excludes the Epic filter, so a change to epicKeys alone cannot change the
+      // epic list; skipping it saves a scan of up to 10 pages. A project, board or type change
+      // still refreshes the epics, because the scan depends on them.
+      const epicsOnly =
+        !projectChanged &&
+        bq.boardId === aq.boardId &&
+        sameNames(bq.issueTypes, aq.issueTypes) &&
+        !sameNames(bq.epicKeys, aq.epicKeys);
       applyState(result);
       broadcast();
       if (projectChanged) {
@@ -729,7 +739,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
         runAsync(fetchIssueTypes);
       }
       // Any effective change refetches, including a Type filter change on its own.
-      runAsync(fetchQueue);
+      runAsync(() => fetchQueue(!epicsOnly));
     }
 
     async function refreshProjects(): Promise<void> {

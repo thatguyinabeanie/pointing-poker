@@ -24,6 +24,8 @@ export type JiraErrorReason =
   | "unreachable"
   | "no_points_field"
   | "query_too_short"
+  // The open-epics query got HTTP 400: the project has no "Epic" issue type.
+  | "no_epic_type"
   | "jira_error";
 
 export type JiraFailure = { ok: false; reason: JiraErrorReason; message: string };
@@ -736,6 +738,10 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
 
   // The project's open epics, key and name only, in rank order. Cached like the other lists,
   // because it does not follow the queue (the queue's own epics are scanned on every call).
+  // The last good open-epics list per project, kept past the cache window as the fallback for a
+  // transient failure.
+  const lastOpenEpics = new Map<string, { key: string; name: string }[]>();
+
   async function listOpenEpics(
     projectKey: string,
   ): Promise<Result<{ key: string; name: string }[]>> {
@@ -743,8 +749,9 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     const cached = cacheGet<{ key: string; name: string }[] | "failed">(cacheKey);
     // A project with no "Epic" type answers 400 every time, so the failure is cached for the
     // same window: it costs one failing request and one warn per window, not one per queue fetch.
-    if (cached === "failed")
-      return fail("jira_error", "Open epics are unavailable for this project.");
+    if (cached === "failed") {
+      return fail("no_epic_type", "Open epics are unavailable for this project.");
+    }
     if (cached) return { ok: true, value: cached };
 
     const jql = `project = ${jqlQuote(projectKey)} AND issuetype = Epic AND statusCategory != Done ORDER BY Rank ASC`;
@@ -756,13 +763,19 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         Math.min(EPIC_SCAN_PAGE_SIZE, MAX_OPEN_EPICS - value.length),
         ["summary"],
         pageToken,
+        { badRequestReason: "no_epic_type" },
       );
       if (!found.ok) {
-        // jira_error is a 400 (no Epic type) or another non-2xx answer; a timeout, 429 or bad
-        // credentials are retried on the next call. The warn lives here so a cached failure
-        // does not repeat it.
-        if (found.reason === "jira_error") cachePut(cacheKey, "failed");
+        // Only a real 400 (no Epic type) is permanent, so only it is cached. A 5xx, timeout or
+        // 429 is transient: caching it would switch "Other open epics" off for the whole window
+        // after one blip. The warn lives here so a cached failure does not repeat it.
+        if (found.reason === "no_epic_type") cachePut(cacheKey, "failed");
         opts.logger?.warn({ reason: found.reason, projectKey }, "jira open epics unavailable");
+        // Past its TTL the last good list is still a better menu than none, and it keeps the
+        // room's selection: listEpics would otherwise return only the queue epics and setEpics
+        // would drop every selected epic that has no ticket needing points.
+        const stale = lastOpenEpics.get(projectKey);
+        if (found.reason !== "no_epic_type" && stale) return { ok: true, value: stale };
         return found;
       }
       for (const item of found.value.items) value.push({ key: item.key, name: item.summary });
@@ -771,6 +784,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       pageToken = found.value.nextPageToken;
     }
     cachePut(cacheKey, value);
+    lastOpenEpics.set(projectKey, value);
     return { ok: true, value };
   }
 
@@ -817,11 +831,15 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
       opts.logger?.debug({ scanned, epics: epics.size }, "jira epic scan capped");
     }
 
-    // The open-epics list is a convenience. A project with no "Epic" issue type answers 400, and
-    // then the menu lists only the queue's epics: one warn line per cache window (logged by
-    // listOpenEpics), no error for the user. A selected
-    // epic whose tickets are all pointed is then not listed, so the room drops it (setEpics).
+    // A project with no "Epic" issue type answers 400, and then the menu lists only the queue's
+    // epics: one warn line per cache window (logged by listOpenEpics), no error for the user.
+    // There is no open list for such a project, so a selected epic whose tickets are all pointed
+    // is not listed and the room drops it (setEpics).
+    // Any other failure with no earlier good list is returned instead: an ok list of only queue
+    // epics would make setEpics drop every selected epic without a ticket needing points, for a
+    // blip. The caller then keeps the previous list and the selection.
     const open = await listOpenEpics(projectKey);
+    if (!open.ok && open.reason !== "no_epic_type") return open;
     if (open.ok) {
       for (const epic of open.value) {
         if (!epics.has(epic.key)) {
@@ -1246,13 +1264,19 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     maxResults: number,
     fields: string[] = ["summary", "issuetype", "status", "parent"],
     pageToken?: string,
+    reqOpts?: RequestOptions,
   ): Promise<Result<{ items: QueueItem[]; more: boolean; nextPageToken: string | null }>> {
-    const res = await request("POST", "/rest/api/3/search/jql", {
-      jql,
-      fields,
-      maxResults,
-      ...(pageToken === undefined ? {} : { nextPageToken: pageToken }),
-    });
+    const res = await request(
+      "POST",
+      "/rest/api/3/search/jql",
+      {
+        jql,
+        fields,
+        maxResults,
+        ...(pageToken === undefined ? {} : { nextPageToken: pageToken }),
+      },
+      reqOpts,
+    );
     if (!res.ok) return res;
 
     const data = parseJson(res.text) as { issues?: unknown; nextPageToken?: unknown } | undefined;
