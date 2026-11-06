@@ -1,6 +1,5 @@
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
-import Paper from "@mui/material/Paper";
 import type { ReactNode } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { readJson, removeItem, writeJson } from "../storage.ts";
@@ -10,22 +9,19 @@ import { ResizeHandle } from "./ResizeHandle.tsx";
 interface Props {
   left: ReactNode;
   main: ReactNode;
-  bottom: ReactNode;
+  floating: ReactNode;
 }
 
-// Heights (px) at lg and up. The header height comes from layoutConstants. The bottom bar is one
-// fixed height in every phase, so the panes above never jump when a round is revealed or someone
-// joins; a crowded players row goes compact (avatars only) instead of wrapping onto a second row.
-// 148 is 12 + 12 padding, the 44px players row, the 8px gap and 68px for the deck row (64px cards
-// plus the selected card's 4px lift), with a little slack. Layout still measures the bar into a
-// CSS variable that the pane max-height reads, so the panes follow the rendered bar rather than
-// trusting this constant. Below lg everything stacks, the bar sizes to its content and the page
-// scrolls.
-const BOTTOM_BAR_HEIGHT = 148;
-const BOTTOM_BAR_HEIGHT_VAR = "--bottom-bar-height";
+// The floating group (the hand and the results pill) is fixed to the bottom of the window, so it
+// takes no space in the page. Layout measures it into a CSS variable. Each pane pads its bottom
+// by that height, so the last line of a long ticket scrolls clear of the group. The panes' own
+// max-height stops at the header and the top padding, because the group floats over their bottom
+// edge.
+const FLOATING_HEIGHT_VAR = "--floating-height";
+// The group's horizontal center, in px from the window's left edge, published at lg and up.
+const FLOATING_CENTER_VAR = "--floating-center";
 const PAGE_TOP_PADDING = 16;
-const BAR_GAP = 16;
-const PANE_MAX_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - var(${BOTTOM_BAR_HEIGHT_VAR}, ${BOTTOM_BAR_HEIGHT}px) - ${PAGE_TOP_PADDING + BAR_GAP}px)`;
+const PANE_MAX_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - ${PAGE_TOP_PADDING}px)`;
 
 // The tickets pane (Queue and History) is one third of the row by default (the old lg 4/12 split), never narrower than
 // the minimum, never wider than half the row. The viewer's choice is stored in px and clamped
@@ -45,19 +41,26 @@ function Pane({ label, children }: { label: string; children: ReactNode }) {
     <Box
       component="section"
       aria-label={label}
-      sx={{ maxHeight: { lg: PANE_MAX_HEIGHT }, overflowY: { lg: "auto" } }}
+      sx={{
+        maxHeight: { lg: PANE_MAX_HEIGHT },
+        overflowY: { lg: "auto" },
+        // Only at lg, where each pane scrolls alone. Below lg the panes stack, so padding both
+        // would leave a gap between them; the page container pads its end instead.
+        boxSizing: "border-box",
+        paddingBottom: { lg: `var(${FLOATING_HEIGHT_VAR}, 0px)` },
+      }}
     >
       {children}
     </Box>
   );
 }
 
-// Holds only the queue width; no data. The bottom bar is a sibling of the row, not inside it,
-// because position: sticky only works inside a parent that is taller than the sticky element.
-export function Layout({ left, main, bottom }: Props) {
+// Holds only the queue width; no data.
+export function Layout({ left, main, floating }: Props) {
   const rowRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const barRef = useRef<HTMLDivElement>(null);
+  const ticketColumnRef = useRef<HTMLDivElement>(null);
+  const floatingRef = useRef<HTMLDivElement>(null);
   const [rowWidth, setRowWidth] = useState(0);
   // null means "use the default"; a number is the viewer's saved or in-progress choice.
   const [chosen, setChosen] = useState<number | null>(() =>
@@ -74,20 +77,40 @@ export function Layout({ left, main, bottom }: Props) {
     return () => observer.disconnect();
   }, []);
 
-  // Publish the bar's rendered height as a CSS variable on the container so the pane max-height
-  // shrinks to match. Written straight to the style so a bar resize does not re-render the tree.
+  // Publish the floating group's rendered height so the panes can pad their bottoms to match.
+  // Written straight to the style so a resize does not re-render the tree.
   useLayoutEffect(() => {
-    const bar = barRef.current;
+    const floatingBox = floatingRef.current;
     const container = containerRef.current;
-    if (!bar || !container) return;
+    if (!floatingBox || !container) return;
     const publish = () =>
       container.style.setProperty(
-        BOTTOM_BAR_HEIGHT_VAR,
-        `${Math.round(bar.getBoundingClientRect().height)}px`,
+        FLOATING_HEIGHT_VAR,
+        `${Math.round(floatingBox.getBoundingClientRect().height)}px`,
       );
     publish();
     const observer = new ResizeObserver(publish);
-    observer.observe(bar);
+    observer.observe(floatingBox);
+    return () => observer.disconnect();
+  }, []);
+
+  // At lg the group centers on the Ticket column, not the window. The column's box changes size
+  // whenever the resize handle or the window moves it, so observing it keeps the group in place.
+  // Below lg the CSS falls back to 50% of the window.
+  useLayoutEffect(() => {
+    const column = ticketColumnRef.current;
+    const container = containerRef.current;
+    if (!column || !container) return;
+    const publish = () => {
+      const rect = column.getBoundingClientRect();
+      container.style.setProperty(
+        FLOATING_CENTER_VAR,
+        `${Math.round(rect.left + rect.width / 2)}px`,
+      );
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(column);
     return () => observer.disconnect();
   }, []);
 
@@ -115,13 +138,11 @@ export function Layout({ left, main, bottom }: Props) {
       sx={{
         px: { xs: 2, lg: 3 },
         pt: `${PAGE_TOP_PADDING}px`,
-        pb: { xs: 2, lg: 0 },
+        // Below lg the page scrolls, so its end clears the floating group. At lg the panes do it.
+        pb: { xs: `calc(16px + var(${FLOATING_HEIGHT_VAR}, 0px))`, lg: 0 },
         display: "flex",
         flexDirection: "column",
         boxSizing: "border-box",
-        // Fills the viewport under the header so the sticky bar rests at the bottom edge
-        // even when the panes are short.
-        minHeight: { lg: `calc(100vh - ${HEADER_HEIGHT}px)` },
       }}
     >
       <Box
@@ -156,26 +177,30 @@ export function Layout({ left, main, bottom }: Props) {
             onReset={reset}
           />
         </Box>
-        <Box sx={{ flex: { lg: 1 }, minWidth: 0, width: { xs: "100%", lg: "auto" } }}>
+        <Box
+          ref={ticketColumnRef}
+          sx={{ flex: { lg: 1 }, minWidth: 0, width: { xs: "100%", lg: "auto" } }}
+        >
           <Pane label="Ticket">{main}</Pane>
         </Box>
       </Box>
-      <Paper
-        ref={barRef}
-        elevation={4}
-        square
+      <Box
+        ref={floatingRef}
         sx={{
-          mt: `${BAR_GAP}px`,
-          p: 1.5,
-          position: { xs: "static", lg: "sticky" },
+          position: "fixed",
           bottom: 0,
+          left: { xs: "50%", lg: `var(${FLOATING_CENTER_VAR}, 50%)` },
+          transform: "translateX(-50%)",
           zIndex: (theme) => theme.zIndex.appBar,
-          boxSizing: "border-box",
-          height: { lg: BOTTOM_BAR_HEIGHT },
+          maxWidth: "100vw",
+          // The box spans the group's width but is mostly empty; clicks on the empty parts must
+          // reach the ticket beneath. The children opt back in.
+          pointerEvents: "none",
+          "& > *": { pointerEvents: "auto" },
         }}
       >
-        {bottom}
-      </Paper>
+        {floating}
+      </Box>
     </Container>
   );
 }

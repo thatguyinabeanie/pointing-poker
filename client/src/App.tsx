@@ -5,7 +5,6 @@ import Container from "@mui/material/Container";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DECK } from "../../shared/deck.ts";
 import type { Card, ClientCommand, QueueSettings } from "../../shared/protocol.ts";
-import { ActionBar } from "./components/ActionBar.tsx";
 import { Deck } from "./components/Deck.tsx";
 import { Header } from "./components/Header.tsx";
 import { Layout } from "./components/Layout.tsx";
@@ -13,8 +12,8 @@ import { LeftPanel } from "./components/LeftPanel.tsx";
 import { type Notice, NoticeSnackbar } from "./components/NoticeSnackbar.tsx";
 import { Players } from "./components/Players.tsx";
 import { QueueControls } from "./components/QueueControls.tsx";
+import { ResultsPill } from "./components/ResultsPill.tsx";
 import { RoomSwitch } from "./components/RoomSwitch.tsx";
-import { RoundSummary } from "./components/RoundSummary.tsx";
 import { TicketView } from "./components/TicketView.tsx";
 import { useGameSocket } from "./useGameSocket.ts";
 
@@ -102,6 +101,7 @@ export function App() {
       dispatch(clearTicket ? { type: "reset", clearTicket: true } : { type: "reset" }),
     [dispatch],
   );
+  const onNext = useCallback(() => onReset({ clearTicket: true }), [onReset]);
   const onSave = useCallback(
     (points: number) => dispatch({ type: "saveEstimate", points }),
     [dispatch],
@@ -170,45 +170,37 @@ export function App() {
             <TicketView ticket={snapshot.ticket} />
           </>
         }
-        bottom={
-          <Box sx={{ display: "flex", flexDirection: "column" }}>
-            <Box
-              sx={{
-                display: "grid",
-                // The auto center column keeps the deck centered whatever width the sides take.
-                gridTemplateColumns: { xs: "1fr", lg: "1fr auto 1fr" },
-                // 8px between lg and xl gives the actions cell the room the Save spinner needs.
-                gap: { xs: 2, lg: 1, xl: 2 },
-                alignItems: "center",
-                mt: 1,
-              }}
-            >
-              {/* The revealed results sit in the left cell, so the deck stays centered between two
-                  equal 1fr columns. Empty outside the reveal. */}
-              <Box sx={{ display: "flex", justifyContent: { lg: "flex-start" } }}>
-                <RoundSummary phase={snapshot.phase} stats={snapshot.stats} />
-              </Box>
-              <Deck
+        floating={
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "flex-end",
+              gap: "20px",
+              // Layout's wrapper lets clicks through its empty space; this row must too, so the
+              // gap and the space above the shorter child do not block the ticket beneath.
+              pointerEvents: "none",
+              "& > *": { pointerEvents: "auto" },
+            }}
+          >
+            <Deck
+              deck={DECK}
+              selected={selected}
+              disabled={disabled || snapshot.phase === "idle"}
+              onSelect={onSelect}
+              onClear={onClear}
+            />
+            {snapshot.phase === "revealed" && (
+              <ResultsPill
+                round={snapshot.round}
+                stats={snapshot.stats}
+                ticket={snapshot.ticket}
                 deck={DECK}
-                selected={selected}
-                disabled={disabled || snapshot.phase === "idle"}
-                onSelect={onSelect}
-                onClear={onClear}
+                disabled={disabled}
+                jiraSave={snapshot.jiraSave}
+                onSave={onSave}
+                onNext={onNext}
               />
-              <Box sx={{ justifySelf: { lg: "end" } }}>
-                <ActionBar
-                  phase={snapshot.phase}
-                  round={snapshot.round}
-                  stats={snapshot.stats}
-                  ticket={snapshot.ticket}
-                  deck={DECK}
-                  disabled={disabled}
-                  jiraSave={snapshot.jiraSave}
-                  onReset={onReset}
-                  onSave={onSave}
-                />
-              </Box>
-            </Box>
+            )}
           </Box>
         }
       />

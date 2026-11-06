@@ -14,8 +14,7 @@ interface Props {
 
 // The round's own controls, at the right end of the players strip: the vote count (or
 // "Revealed") and the buttons that move the round along. Reset keeps the ticket, so it
-// replays the same ticket; only Next clears it, and Next lives with the save controls (ActionBar now, the results pill
-// after Task 2).
+// replays the same ticket; only Next clears it, and Next is in the results pill.
 // Reveal stays enabled with zero votes: that is how the room behaved before the strip.
 export function RoundControls({
   phase,
