@@ -7,7 +7,7 @@ import type {
   MouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CARD_HEIGHT, CARD_WIDTH, cardPose, fitStep, openLift } from "../lib/handLayout.ts";
 
 interface Props {
@@ -31,8 +31,15 @@ const ROOT_HEIGHT = PEEK + SELECTED_RAISE;
 const ZONE_SIDE_MARGIN = 130;
 // The arc rises from the cards' rest position, whose bottom edge is this far below the window.
 const REST_BOTTOM = PEEK - CARD_HEIGHT;
-// The window minus 16px on each side (spec: narrow screens).
-const availableWidth = () => window.innerWidth - 32;
+// The arc is centered on the hand, which is not centered on the window once the pill sits beside
+// it. So the room is twice the distance to the nearer window edge, minus 16px on each side (spec:
+// narrow screens). The root is measured, never the cards, so the open transforms cannot feed back.
+function availableWidth(root: HTMLElement | null): number {
+  if (!root) return window.innerWidth - 32;
+  const rect = root.getBoundingClientRect();
+  const center = rect.left + rect.width / 2;
+  return 2 * Math.min(center, window.innerWidth - center) - 32;
+}
 
 const spoken = (card: string) => (card === "☕" ? "coffee break" : card);
 
@@ -40,50 +47,55 @@ type PickSource = "mouse" | "touch" | "keyboard";
 
 // Per-card values (pose, padding, delay) arrive as inline style and CSS variables, so this sx is
 // built once. The hover pose lives in a variable because an inline transform would beat :hover.
-const CARD_SX: SxProps<Theme> = (theme) => ({
-  position: "absolute",
-  left: "50%",
-  bottom: REST_BOTTOM,
-  width: CARD_WIDTH,
-  height: CARD_HEIGHT,
-  marginLeft: `${-CARD_WIDTH / 2}px`,
-  boxSizing: "border-box",
-  display: "grid",
-  placeItems: "start center",
-  padding: "5px 0 0",
-  border: `1px solid ${theme.palette.grey[400]}`,
-  borderRadius: "6px",
-  bgcolor: "background.paper",
-  color: "text.primary",
-  font: "inherit",
-  fontWeight: 700,
-  fontSize: 13,
-  boxShadow: "0 2px 6px rgba(10, 33, 56, 0.18)",
-  cursor: "pointer",
-  userSelect: "none",
-  transform: "var(--pose)",
-  transition:
-    "transform 300ms cubic-bezier(0.2, 0.8, 0.3, 1.15), font-size 200ms, padding 200ms, background-color 150ms",
-  // The stagger deals the arc from the middle out. A variable, so the hover rule can drop it.
-  transitionDelay: "var(--delay)",
-  "&[aria-pressed='true']": {
-    bgcolor: "primary.main",
-    color: "primary.contrastText",
-    borderColor: "primary.main",
-    zIndex: 2,
-  },
-  "&:disabled": { cursor: "default" },
-  "[data-hand-open='true'] &": { placeItems: "center", paddingTop: 0, fontSize: 18 },
+const CARD_SX: SxProps<Theme> = (theme) => {
   // On top while lifted, so a narrowed arc's overlap does not hide the outline.
-  "[data-hand-open='true'] &:hover, [data-hand-open='true'] &:focus-visible": {
+  const lifted = {
     transform: "var(--hover-pose)",
     transitionDelay: "0ms",
     zIndex: 3,
     outline: `2px solid ${theme.palette.primary.main}`,
     outlineOffset: 2,
-  },
-  "@media (prefers-reduced-motion: reduce)": { transition: "none" },
-});
+  };
+  return {
+    position: "absolute",
+    left: "50%",
+    bottom: REST_BOTTOM,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    marginLeft: `${-CARD_WIDTH / 2}px`,
+    boxSizing: "border-box",
+    display: "grid",
+    placeItems: "start center",
+    padding: "5px 0 0",
+    border: `1px solid ${theme.palette.grey[400]}`,
+    borderRadius: "6px",
+    bgcolor: "background.paper",
+    color: "text.primary",
+    font: "inherit",
+    fontWeight: 700,
+    fontSize: 13,
+    boxShadow: "0 2px 6px rgba(10, 33, 56, 0.18)",
+    cursor: "pointer",
+    userSelect: "none",
+    transform: "var(--pose)",
+    transition:
+      "transform 300ms cubic-bezier(0.2, 0.8, 0.3, 1.15), font-size 200ms, padding 200ms, background-color 150ms",
+    // The stagger deals the arc from the middle out. A variable, so the hover rule can drop it.
+    transitionDelay: "var(--delay)",
+    "&[aria-pressed='true']": {
+      bgcolor: "primary.main",
+      color: "primary.contrastText",
+      borderColor: "primary.main",
+      zIndex: 2,
+    },
+    "&:disabled": { cursor: "default" },
+    "[data-hand-open='true'] &": { placeItems: "center", paddingTop: 0, fontSize: 18 },
+    "[data-hand-open='true'] &:focus-visible": lifted,
+    // Touch browsers keep :hover on the last tapped element, which left a card stuck lifted.
+    "@media (hover: hover)": { "[data-hand-open='true'] &:hover": lifted },
+    "@media (prefers-reduced-motion: reduce)": { transition: "none" },
+  };
+};
 
 const HINT_SX: SxProps<Theme> = {
   position: "absolute",
@@ -113,7 +125,7 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
   // A tap on the peek must open without voting, so a click needs the state from before the press.
   const pressRef = useRef({ type: "mouse", wasOpen: false });
   const [focusIndex, setFocusIndex] = useState<number | null>(null);
-  const [step, setStep] = useState(() => fitStep(availableWidth(), deck.length));
+  const [step, setStep] = useState(() => fitStep(availableWidth(null), deck.length));
 
   // The card buttons in deck order, or -1 for anything else (the hover zone, the hint).
   const cards = useCallback(
@@ -135,12 +147,30 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
     setOpen(true);
   }, [disabled, setOpen]);
 
+  const measureStep = useCallback(
+    () => setStep(fitStep(availableWidth(rootRef.current), deck.length)),
+    [deck.length],
+  );
+  // The hand moves without a window resize when the pill appears or goes (the floating row changes
+  // size), for example a reveal from another tab while the arc is open. Layout re-centers the
+  // group from its own observer, so the measure waits a frame for that to land. A drag of the
+  // Ticket column moves the hand too, but the arc is closed then and opening measures again.
   useEffect(() => {
-    const update = () => setStep(fitStep(availableWidth(), deck.length));
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [deck.length]);
+    const row = rootRef.current?.parentElement;
+    let frame = 0;
+    const later = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measureStep);
+    };
+    const observer = new ResizeObserver(later);
+    if (row) observer.observe(row);
+    window.addEventListener("resize", later);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", later);
+    };
+  }, [measureStep]);
 
   // Going idle or offline mid-pick must not leave the arc open to reappear later.
   useEffect(() => {
@@ -148,6 +178,11 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
   }, [disabled, setOpen]);
 
   const isOpen = open && !disabled;
+
+  // Measured again on opening, before paint, so the first frame of the arc already fits.
+  useLayoutEffect(() => {
+    if (isOpen) measureStep();
+  }, [isOpen, measureStep]);
 
   // A mouse leaving the hover zone already closes the arc. Touch has no hover, so a tap anywhere
   // but a card closes it; for a mouse the hover zone counts as part of the hand.
@@ -257,6 +292,11 @@ export function Hand({ deck, selected, disabled, onSelect, onClear }: Props) {
       if (index < 0) return;
       const isArrow = e.key === "ArrowLeft" || e.key === "ArrowRight";
       const isActivate = e.key === "Enter" || e.key === " ";
+      // A held Enter would pick, reopen, then pick again and take the vote back.
+      if (isActivate && e.repeat) {
+        e.preventDefault();
+        return;
+      }
       if (!openRef.current) {
         // Closed: these keys only reopen, so a second Enter after a vote cannot take it back.
         if (isArrow || isActivate) {

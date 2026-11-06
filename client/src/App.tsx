@@ -174,7 +174,11 @@ export function App() {
           <Box
             sx={{
               display: "flex",
-              alignItems: "flex-end",
+              // Side by side, the hand, the gap and the pill need about 738px, which does not fit
+              // below md: the hand's arc ran off the left edge after the reveal. There the pill
+              // stacks above the hand, so the hand stays at the bottom edge, centered.
+              flexDirection: { xs: "column-reverse", md: "row" },
+              alignItems: { xs: "center", md: "flex-end" },
               gap: "20px",
               // Layout's wrapper lets clicks through its empty space; this row must too, so the
               // gap and the space above the shorter child do not block the ticket beneath.

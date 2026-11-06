@@ -20,6 +20,8 @@ interface Props {
 const FLOATING_HEIGHT_VAR = "--floating-height";
 // The group's horizontal center, in px from the window's left edge, published at lg and up.
 const FLOATING_CENTER_VAR = "--floating-center";
+// The least room kept between the floating group and either side of the window.
+const FLOATING_EDGE = 16;
 const PAGE_TOP_PADDING = 16;
 const PANE_MAX_HEIGHT = `calc(100vh - ${HEADER_HEIGHT}px - ${PAGE_TOP_PADDING}px)`;
 
@@ -77,41 +79,40 @@ export function Layout({ left, main, floating }: Props) {
     return () => observer.disconnect();
   }, []);
 
-  // Publish the floating group's rendered height so the panes can pad their bottoms to match.
-  // Written straight to the style so a resize does not re-render the tree.
-  useLayoutEffect(() => {
-    const floatingBox = floatingRef.current;
-    const container = containerRef.current;
-    if (!floatingBox || !container) return;
-    const publish = () =>
-      container.style.setProperty(
-        FLOATING_HEIGHT_VAR,
-        `${Math.round(floatingBox.getBoundingClientRect().height)}px`,
-      );
-    publish();
-    const observer = new ResizeObserver(publish);
-    observer.observe(floatingBox);
-    return () => observer.disconnect();
-  }, []);
-
+  // Publish the floating group's rendered height so the panes can pad their bottoms to match, and
+  // its center. Written straight to the style so a resize does not re-render the tree.
+  //
   // At lg the group centers on the Ticket column, not the window. The column's box changes size
   // whenever the resize handle or the window moves it, so observing it keeps the group in place.
-  // Below lg the CSS falls back to 50% of the window.
+  // The center is clamped so the whole group stays FLOATING_EDGE inside the window: centered on a
+  // right-hand column at 1300px, the revealed pill ran past the right edge. Below lg the CSS
+  // falls back to 50% of the window.
   useLayoutEffect(() => {
+    const floatingBox = floatingRef.current;
     const column = ticketColumnRef.current;
     const container = containerRef.current;
-    if (!column || !container) return;
+    if (!floatingBox || !column || !container) return;
     const publish = () => {
+      const group = floatingBox.getBoundingClientRect();
+      container.style.setProperty(FLOATING_HEIGHT_VAR, `${Math.round(group.height)}px`);
       const rect = column.getBoundingClientRect();
-      container.style.setProperty(
-        FLOATING_CENTER_VAR,
-        `${Math.round(rect.left + rect.width / 2)}px`,
-      );
+      const viewport = window.innerWidth;
+      const min = group.width / 2 + FLOATING_EDGE;
+      const max = viewport - group.width / 2 - FLOATING_EDGE;
+      // Wider than the window minus both edges: no center keeps it inside, so use the middle.
+      const center =
+        min > max ? viewport / 2 : Math.min(max, Math.max(min, rect.left + rect.width / 2));
+      container.style.setProperty(FLOATING_CENTER_VAR, `${Math.round(center)}px`);
     };
     publish();
     const observer = new ResizeObserver(publish);
+    observer.observe(floatingBox);
     observer.observe(column);
-    return () => observer.disconnect();
+    window.addEventListener("resize", publish);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", publish);
+    };
   }, []);
 
   // On a very narrow row the max could fall below the min; the min wins.
