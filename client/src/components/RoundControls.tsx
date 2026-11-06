@@ -1,6 +1,7 @@
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+import { useCallback } from "react";
 import type { Phase } from "../../../shared/protocol.ts";
 
 interface Props {
@@ -24,7 +25,7 @@ export function RoundControls({
   onReveal,
   onReset,
 }: Props) {
-  const keepTicket = () => onReset({ clearTicket: false });
+  const keepTicket = useCallback(() => onReset({ clearTicket: false }), [onReset]);
   return (
     <Stack
       direction="row"

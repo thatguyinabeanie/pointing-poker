@@ -62,10 +62,12 @@ const COLUMN_GAP = 16;
 // The controls width reserved at lg, whatever the phase, so compact mode does not depend on
 // the phase: the voting controls ("N of M voted", Reveal, Reset) and the revealed ones
 // ("Revealed", Reset) differ in width, and measuring only the current one would let names show
-// in one phase and drop in the other. 280 is a starting guess; Task 4 of the hand-of-cards plan
-// measures the voting layout in Chrome and corrects it. It is the CSS min-width of the
-// controls cell, so a wider real layout counts at its real width.
-const CONTROLS_RESERVED_WIDTH = 280;
+// in one phase and drop in the other. It is the CSS min-width of the controls cell, so a wider
+// real layout counts at its real width.
+// Measured in Chrome at a 1440px layout while voting: "0 of 1 voted" 90px, Reveal 68px, Reset
+// 64px and two 8px gaps came to 238px with a one-digit count. Rounded up to 260, not to 240, to
+// leave room for two-digit counts such as "12 of 14 voted".
+const CONTROLS_RESERVED_WIDTH = 260;
 
 // The players strip, at the top of the Ticket pane: the pills left-aligned, the round controls
 // at the right. At lg it sticks to the top of the pane while the ticket scrolls under it, with

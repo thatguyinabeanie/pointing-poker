@@ -106,7 +106,7 @@ Other rules: state is never color-only. Vote status uses an icon plus `aria-labe
 | Reveal button | `Button variant="contained"` | primary | Navy fill, white text |
 | Save to Jira button | `Button variant="contained"` | primary | Navy fill, white text. Spinner is white. |
 | Start round / Reset / Next ticket | `Button variant="outlined"` | primary | Navy border and text |
-| Vote cards (Deck) | selected contained, others outlined | primary | Selected Navy fill, others Navy border |
+| Vote cards (Hand) | selected filled, others white with a gray border | primary | Selected Navy fill, others white cards (decision 51) |
 | Vote status icon | `CheckCircle` / `HourglassEmpty` | success / text.secondary | #32522E check, Night Gray hourglass |
 | Success alert ("Saved") | `Alert severity="success"` | success | Standard MUI alert with success palette |
 | Inline error alerts | `Alert severity="error"` | error | Standard MUI alert |

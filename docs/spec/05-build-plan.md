@@ -163,7 +163,7 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
   `client/src/components/TicketDescription.tsx` and `client/src/components/TicketComments.tsx` (new, replace TicketPanel; display only, no input),
   `client/src/components/ParticipantChips.tsx` (new, replaces ParticipantList; stats are inline in the bottom slot, so no StatsCard),
   `client/src/components/Layout.tsx` (new, LAYOUT C), and
-  `client/src/App.tsx` (wires QueuePanel, TicketDescription, TicketComments, ParticipantChips, Deck, ActionBar and Layout, and builds the bottom slot inline, and sends the queue commands).
+  `client/src/App.tsx` (wires QueuePanel, TicketDescription, TicketComments, ParticipantChips, Deck, ActionBar and Layout, and builds the bottom slot inline (decision 51 later replaced Deck and ActionBar with Hand and ResultsPill, and the bottom slot with a floating slot), and sends the queue commands).
 - **Spec sections:** `03-client.md` (section 3 hook, section 4 App wiring, section 5 main, theme,
   index.html, section 6 Vite config, section 7 UI states, section 8 accessibility, section 9
   acceptance checklist).
@@ -186,7 +186,7 @@ no new design. Opus is used only for `ws.ts`. Change this if the user prefers ot
   - [ ] Search: typing "dashboard" lists matches; typing a key finds that ticket.
   - [ ] `find client -name "*.css"` prints nothing. Styling comes from the theme.
   - [ ] Layout: at 1440px the three panes are visible with description and comments side by side;
-        the bottom bar is always visible, one row, holding the participant chips, the deck, and the actions.
+        the participants strip is at the top of the ticket pane, and the hand of cards is always visible at the bottom edge (decision 51 replaced the original one-row bottom bar).
 
 ## Step 4: local two-player smoke
 
