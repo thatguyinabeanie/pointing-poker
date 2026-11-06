@@ -260,7 +260,8 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     broadcast();
     // The epic menu follows the queue: pointing a ticket or changing the Type filter can add or
     // remove epics. Not awaited, so a save's auto-advance does not wait for the epic scan.
-    if (refreshEpics && "sections" in outcome) {
+    // Also after a failed queue fetch: the list must match the current Type filter either way.
+    if (refreshEpics) {
       void fetchEpics().catch((err: unknown) => app.log.error({ err }, "epics fetch threw"));
     }
   }
@@ -307,14 +308,23 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     selected: (settings: QueueSettings) => string[];
     // Whether the queue refetch started by a dropped selection also refetches the epic list.
     refetchEpics: boolean;
+    // The settings values the list was loaded for. A list is dropped when they changed during the
+    // load.
+    dependsOn?: (settings: QueueSettings) => string[];
   }): () => Promise<void> {
     let seq = 0;
     return async () => {
       const projectKey = state.queueSettings.projectKey;
       if (projectKey === null) return;
       const mySeq = ++seq;
+      const loadedFor = opts.dependsOn?.(state.queueSettings) ?? [];
       const res = await opts.load(projectKey, state.queueSettings);
-      if (mySeq !== seq || state.queueSettings.projectKey !== projectKey) {
+      // The epic list depends on the Type filter. A scan for the old Type can finish before the
+      // queue fetch for the new one starts its own scan, and if that queue fetch fails no later
+      // scan replaces it, so a list for the wrong Type would stay. Comparing the values the scan
+      // loaded with closes that gap.
+      const settingsChanged = !sameNames(loadedFor, opts.dependsOn?.(state.queueSettings) ?? []);
+      if (mySeq !== seq || state.queueSettings.projectKey !== projectKey || settingsChanged) {
         app.log.debug({ projectKey }, `dropped stale ${opts.label} result`);
         return;
       }
@@ -350,6 +360,7 @@ export async function wsRoutes(app: FastifyInstance, opts: { jira: JiraClient })
     apply: (current, epics) => game.setEpics(current, epics),
     selected: (settings) => settings.epicKeys,
     refetchEpics: false,
+    dependsOn: (settings) => settings.issueTypes,
   });
 
   // Resolves JIRA_DEFAULT_BOARD (numeric id or board name) against the default project's boards

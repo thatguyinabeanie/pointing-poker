@@ -745,6 +745,7 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
     const epics = new Map<string, QueueEpic>();
     let scanned = 0;
     let pageToken: string | undefined;
+    let more = false;
     while (scanned < MAX_EPIC_SCAN) {
       const found = await searchIssues(
         jql,
@@ -757,9 +758,14 @@ export function createJiraClient(opts: JiraClientOptions): JiraClient {
         if (item.epic && !epics.has(item.epic.key)) epics.set(item.epic.key, item.epic);
       }
       scanned += found.value.items.length;
+      more = found.value.nextPageToken !== null;
       // An empty page with a token would repeat forever, so it ends the scan too.
       if (found.value.nextPageToken === null || found.value.items.length === 0) break;
       pageToken = found.value.nextPageToken;
+    }
+    // A full scan with a next page means the menu is missing some epics; leave a trace.
+    if (scanned >= MAX_EPIC_SCAN && more) {
+      opts.logger?.debug({ scanned, epics: epics.size }, "jira epic scan capped");
     }
     const colors = await epicColors([...epics.keys()]);
     const value = [...epics.values()].map((epic) => ({

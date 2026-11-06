@@ -43,7 +43,7 @@ const SELECT_FORM_SX = {
   maxWidth: { xs: 220, lg: 130, xl: 220 },
 } as const;
 
-// The Epic menu can list up to 100 epics (MAX_EPICS on the server), so it scrolls instead of
+// The Epic menu can be long (every epic with a ticket needing points), so it scrolls instead of
 // running off the screen.
 const EPIC_MENU_PROPS = { slotProps: { paper: { sx: { maxHeight: 360 } } } } as const;
 
