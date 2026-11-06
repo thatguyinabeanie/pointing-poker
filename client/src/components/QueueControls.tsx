@@ -31,7 +31,7 @@ interface Props {
   boards: JiraBoard[];
   // The project's issue type names (the menu), not the selection in settings.issueTypes.
   issueTypes: string[];
-  // The project's open epics, the Epic menu.
+  // The Epic menu: the queue's epics first (inQueue), then the project's other open epics.
   epics: QueueEpic[];
   disabled: boolean;
   // The old Refresh button was also disabled while the queue loaded; the caller passes that in.
@@ -134,7 +134,10 @@ export function QueueControls({
     onSend: onSendTypes,
   });
 
-  const epicsDisabled = disabled || epics.length === 0;
+  // Enabled while a selection exists even with an empty menu: the server keeps the selection when
+  // the epic list comes back empty (a failed fetch), and a disabled select would leave the room
+  // stuck with a filter nobody can clear (final review, 11/06/2026).
+  const epicsDisabled = disabled || (epics.length === 0 && settings.epicKeys.length === 0);
   const onSendEpics = useCallback(
     (next: string[]) => onChangeSettings({ epicKeys: next }),
     [onChangeSettings],
@@ -190,21 +193,41 @@ export function QueueControls({
       e.currentTarget.closest("ul")?.querySelector<HTMLElement>("li[data-value]")?.focus();
     }
   }, []);
+  // ArrowUp on the first row goes back to the search field. The menu's own handling wrapped it to
+  // the last row, so the field could only be reached again by closing and reopening the menu
+  // (final review, 11/06/2026). stopPropagation keeps the menu list from also moving focus.
+  const onRowKeyDown = useCallback((e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "ArrowUp") return;
+    const first = e.currentTarget.closest("ul")?.querySelector<HTMLElement>("li[data-value]");
+    if (first !== e.currentTarget) return;
+    e.preventDefault();
+    e.stopPropagation();
+    searchRef.current?.focus();
+  }, []);
   // Selected epics stay listed while filtering, so a hidden checked row cannot be sent by surprise.
+  // A selected key with no epic in the list (a closed epic, or the list failed to load) gets a row
+  // of its own under "Selected", or it could never be unchecked. Both the room's selection and the
+  // draft count, so unchecking such a row keeps it listed until the menu closes and sends.
   const epicGroups = useMemo(() => {
     const q = epicSearch.trim().toLowerCase();
     const matches = (e: QueueEpic) =>
       q === "" || e.name.toLowerCase().includes(q) || e.key.toLowerCase().includes(q);
     const isShown = (e: QueueEpic) => epicSelect.value.includes(e.key) || matches(e);
+    const listed = new Set(epics.map((e) => e.key));
+    const unknown = [...new Set([...settings.epicKeys, ...epicSelect.value])].filter(
+      (key) => !listed.has(key),
+    );
     return {
+      unknown,
       inQueue: epics.filter((e) => e.inQueue && isShown(e)),
       other: epics.filter((e) => !e.inQueue && isShown(e)),
       anyMatch: epics.some(matches),
     };
-  }, [epics, epicSearch, epicSelect.value]);
-  const epicRow = (epic: QueueEpic): ReactNode => (
-    <MenuItem key={epic.key} value={epic.key} dense>
-      <Checkbox size="small" checked={epicSelect.value.includes(epic.key)} sx={{ p: 0.5 }} />
+  }, [epics, epicSearch, epicSelect.value, settings.epicKeys]);
+  // A row for an unknown key has no name or color, so it shows the key and a neutral dot.
+  const epicRow = (key: string, epic?: QueueEpic): ReactNode => (
+    <MenuItem key={key} value={key} dense onKeyDown={onRowKeyDown}>
+      <Checkbox size="small" checked={epicSelect.value.includes(key)} sx={{ p: 0.5 }} />
       <Box
         aria-hidden
         sx={{
@@ -213,10 +236,14 @@ export function QueueControls({
           mr: 1,
           flexShrink: 0,
           borderRadius: "50%",
-          bgcolor: epicHex(epic.color),
+          bgcolor: epic ? epicHex(epic.color) : "text.disabled",
         }}
       />
-      <ListItemText primary={epic.name} secondary={epic.key} />
+      {epic ? (
+        <ListItemText primary={epic.name} secondary={epic.key} />
+      ) : (
+        <ListItemText primary={key} />
+      )}
     </MenuItem>
   );
   // Select accepts an array of children, not a Fragment. Headers have no value, so a click on
@@ -236,12 +263,20 @@ export function QueueControls({
       />
     </ListSubheader>,
   ];
+  if (epicGroups.unknown.length > 0) {
+    epicMenuItems.push(
+      <ListSubheader key="h-selected" disableSticky sx={EPIC_GROUP_HEADER_SX}>
+        Selected
+      </ListSubheader>,
+      ...epicGroups.unknown.map((key) => epicRow(key)),
+    );
+  }
   if (epicGroups.inQueue.length > 0) {
     epicMenuItems.push(
       <ListSubheader key="h-queue" disableSticky sx={EPIC_GROUP_HEADER_SX}>
         In the queue
       </ListSubheader>,
-      ...epicGroups.inQueue.map(epicRow),
+      ...epicGroups.inQueue.map((e) => epicRow(e.key, e)),
     );
   }
   if (epicGroups.other.length > 0) {
@@ -249,10 +284,10 @@ export function QueueControls({
       <ListSubheader key="h-other" disableSticky sx={EPIC_GROUP_HEADER_SX}>
         Other open epics
       </ListSubheader>,
-      ...epicGroups.other.map(epicRow),
+      ...epicGroups.other.map((e) => epicRow(e.key, e)),
     );
   }
-  if (!epicGroups.anyMatch) {
+  if (!epicGroups.anyMatch && epics.length > 0) {
     epicMenuItems.push(
       <ListSubheader key="empty" disableSticky sx={EPIC_GROUP_HEADER_SX}>
         No epics match

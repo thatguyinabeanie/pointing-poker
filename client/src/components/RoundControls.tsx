@@ -1,8 +1,8 @@
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import type { ReactNode } from "react";
-import { useCallback } from "react";
+import type { MouseEvent, ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import type { Phase } from "../../../shared/protocol.ts";
 
 interface Props {
@@ -16,6 +16,15 @@ interface Props {
   onReveal: () => void;
   onReset: (opts: { clearTicket: boolean }) => void;
 }
+
+// The buttons whose click ends the phase they are shown in, so they unmount under the focus.
+type Step = "reveal" | "next";
+
+// After a focused Reveal: the Points select, or Save when Points is disabled. Both are inside
+// the results slot, so they are found by the data-round-focus attributes RoundResults sets. A
+// disabled Select's display has aria-disabled, a disabled Button the disabled attribute.
+const AFTER_REVEAL_SELECTOR =
+  '[data-round-focus="points"]:not([aria-disabled="true"]), [data-round-focus="save"]:not(:disabled)';
 
 // The round's own controls, at the right end of the players strip: the vote count (or, after the
 // reveal, the results) and the buttons that move the round along. Reset keeps the ticket, so it
@@ -35,11 +44,55 @@ export function RoundControls({
   onReset,
 }: Props) {
   const keepTicket = useCallback(() => onReset({ clearTicket: false }), [onReset]);
+
+  // Reveal unmounts the Reveal button and Next unmounts the results, so a keyboard user who
+  // pressed either was left with focus on body and had to Tab in from the top (final review,
+  // 11/06/2026). Focus moves back into the strip only when this client's button had focus at
+  // click time: the phase also changes from auto-reveal and from another tab's Reveal or Next,
+  // and those must never pull focus away from what the viewer is doing. The click is caught in
+  // the capture phase because Next lives in the results slot, which this component does not
+  // render; its data-round-step attribute names it. Read at click time, because by the time the
+  // snapshot arrives the button is gone.
+  const stackRef = useRef<HTMLDivElement>(null);
+  const revealRef = useRef<HTMLButtonElement>(null);
+  const resetRef = useRef<HTMLButtonElement>(null);
+  const pendingStep = useRef<Step | null>(null);
+  const onClickCapture = useCallback((e: MouseEvent<HTMLElement>) => {
+    const button = (e.target as Element).closest<HTMLElement>("[data-round-step]");
+    const step = button?.dataset.roundStep;
+    pendingStep.current =
+      button === document.activeElement && (step === "reveal" || step === "next") ? step : null;
+  }, []);
+  // Layout effect so focus lands before paint, with no frame where the strip has no focus ring.
+  useLayoutEffect(() => {
+    const step = pendingStep.current;
+    // Any phase change uses the flag up, so a click whose phase change never came (a rejected
+    // message) cannot move focus at some later, unrelated change.
+    pendingStep.current = null;
+    if (step === null) return;
+    // Only when focus really fell: the browser reports body once the focused button is removed.
+    // If the viewer has already moved focus somewhere else, leave it there.
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    let target: HTMLElement | null = null;
+    if (step === "reveal" && phase === "revealed") {
+      target = stackRef.current?.querySelector<HTMLElement>(AFTER_REVEAL_SELECTOR) ?? null;
+    } else if (step === "next" && phase !== "revealed") {
+      // Start round in idle. With auto-advance the next round may already be voting, where Reveal
+      // comes first and Reset (the same button as Start round) is the fallback.
+      const reveal = revealRef.current;
+      target = reveal && !reveal.disabled ? reveal : resetRef.current;
+    }
+    if (target && !(target instanceof HTMLButtonElement && target.disabled)) target.focus();
+  }, [phase]);
+
   return (
     <Stack
+      ref={stackRef}
       direction="row"
       useFlexGap
       spacing={1}
+      onClickCapture={onClickCapture}
       sx={{
         alignItems: "center",
         justifyContent: "flex-end",
@@ -55,11 +108,24 @@ export function RoundControls({
       )}
       {phase === "revealed" && results}
       {phase === "voting" && (
-        <Button variant="contained" size="small" disabled={disabled} onClick={onReveal}>
+        <Button
+          ref={revealRef}
+          variant="contained"
+          size="small"
+          data-round-step="reveal"
+          disabled={disabled}
+          onClick={onReveal}
+        >
           Reveal
         </Button>
       )}
-      <Button variant="outlined" size="small" disabled={disabled} onClick={keepTicket}>
+      <Button
+        ref={resetRef}
+        variant="outlined"
+        size="small"
+        disabled={disabled}
+        onClick={keepTicket}
+      >
         {phase === "idle" ? "Start round" : "Reset"}
       </Button>
     </Stack>

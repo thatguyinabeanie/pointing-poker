@@ -43,8 +43,9 @@ export function cardPose(
 }
 
 // Half the width of the resting fan: the end card's center plus its tilted half-width, reached at
-// its outer top corner, which is inside the peek. The hand's root is this wide, so the pill beside
-// it at lg starts past the end cards instead of under them.
+// its outer top corner, which is inside the peek. The hand's root is this wide because Layout's
+// window clamp keeps the root's box 16px inside the window and the closed hover zone is the root
+// plus 20px a side: a narrower root would let the end cards run past the edge and out of the zone.
 export function restHalfWidth(cards: number): number {
   const end = cardPose((cards - 1) / 2, false, 0);
   const tilt = (end.rotate * Math.PI) / 180;

@@ -172,10 +172,10 @@ export function Layout({ left, main, floating }: Props) {
   //
   // At lg the group centers on the Ticket column, not the window. The column's box changes size
   // whenever the resize handle or the window moves it, so observing it keeps the group in place.
-  // The center is clamped so the whole group stays FLOATING_EDGE inside the window. It was needed
-  // when the results pill made the group about 874px wide (it ran past the right edge at 1300px);
-  // with the 256px hand alone it is a safeguard, and Hand still measures where the hand actually
-  // is rather than assuming the column's center. Below lg the CSS falls back to 50% of the
+  // The center is clamped so the whole group stays FLOATING_EDGE inside the window. It was added
+  // when the group was about 874px wide and ran past the right edge at 1300px; with the 256px hand
+  // alone it is a safeguard, and Hand still measures where the hand actually is rather than
+  // assuming the column's center. Below lg the CSS falls back to 50% of the
   // window.
   useLayoutEffect(() => {
     const floatingBox = floatingRef.current;

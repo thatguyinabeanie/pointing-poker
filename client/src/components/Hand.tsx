@@ -179,8 +179,8 @@ export function Hand({ deck, selected, disabled, disabledHint, onSelect, onClear
   const measureStep = useCallback(() => setAvailable(availableWidth(rootRef.current)), []);
   // A window resize moves the hand: Layout re-centers it from its own resize listener, so the
   // measure waits a frame for that to land. A drag of the Ticket column moves the hand too, but the
-  // arc is closed then and opening measures again. Nothing else moves it now that the floating
-  // group is only the hand (the results pill used to resize the group at the reveal).
+  // arc is closed then and opening measures again. Nothing else moves it: the floating group is
+  // only the hand, so the reveal does not resize it.
   useEffect(() => {
     let frame = 0;
     const later = () => {
